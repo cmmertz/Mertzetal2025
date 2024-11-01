@@ -8,3 +8,5 @@
 **16S_DiversityComposition.Rmd** Script for alpha and beta diversity analyses for microbiome and diet data. Includes code for 16S alpha and beta diversity figures, and relative abundance figures.
 
 **qPCR_BacterialBiomass.Rmd** Script used to perform statistical and visual analyses of qPCR bacterial biomass data. Code for supplemental qPCR figure is included.
+
+**MixSIAR_d13C_Models.Rmd** Script for running compound-specific stable isotope mixing models of amino acid δ13C values from mice muscle (mixture/consumer) and dietary protein sources (casein for synthetic diet; cornmeal and cricket powder for semi-natural diet) to estimate microbial contributions of amino acids to host tissue.
