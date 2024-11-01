@@ -5,7 +5,7 @@ date: "2023-10-31"
 output: html_document
 ---
 
-Script for running compound specific stable isotope mixing models of Amino Acid δ13C values from mice muscle (mixture/consumer) and dietary protein sources (casein for synthetic diet; cornmeal and cricket powder for semi-natural diet) to estimate microbial contributions of amino acids to host tissue.
+Script for running compound specific stable isotope mixing models of Amino Acid δ13C values from mice muscle (mixture/consumer) and dietary or microbial protein sources (casein for synthetic diet; cornmeal and cricket powder for semi-natural diet) to estimate microbial contributions of amino acids to host tissue.
 
 The following code only evaluates mice fed the synthetic diet, but you simply repeat for mice in the semi-natural treatment and adjust the dietary protein sources accordingly. Lastly, this code can be used for all Essential Amino Acids (AA), but you must do one AA at a time.This code is for Ile, but you simply repeat for each respective AA. 
 
@@ -43,7 +43,7 @@ mix <- load_mix_data(filename="E1_muscle_consumer_Ile.csv",
 
 ###Load source data
 Load the source data, i.e. your:
-- Source isotope values (dietary protein source; for this example its casein)
+- Source isotope values (dietary protein source; for this example it's casein AND gut microbial Ile d13C value)
 
 ```{r}
 setwd("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/SIA/E1_E2_d13C Data/Microbial_Contribution_MixingModel/Synthetic MIXSIAR/Ile")
