@@ -10,3 +10,5 @@
 **qPCR_BacterialBiomass.Rmd** Script used to perform statistical and visual analyses of qPCR bacterial biomass data. Code for supplemental qPCR figure is included.
 
 **MixSIAR_d13C_Models.Rmd** Script for running compound-specific stable isotope mixing models of amino acid δ13C values from mice muscle (mixture/consumer) and dietary or microbial protein sources (casein for synthetic diet; cornmeal and cricket powder for semi-natural diet) to estimate microbial contributions of amino acids to host tissue.
+
+**MetagenomicsProcessingPipeline** Code detailing pipeline used for metagenomic data processing and analysis of cecum samples sequenced at 7 million reads. Inputs are raw fastq files, output include assembled MAGs and their resulting proteomes.
