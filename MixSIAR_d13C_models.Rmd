@@ -1,0 +1,158 @@
+---
+title: "MixSIAR_d13C_Models"
+author: "Conner Mertz"
+date: "2023-10-31"
+output: html_document
+---
+
+Script for running compound specific stable isotope mixing models of Amino Acid δ13C values from mice muscle (mixture/consumer) and dietary protein sources (casein for synthetic diet; cornmeal and cricket powder for semi-natural diet) to estimate microbial contributions of amino acids to host tissue.
+
+The following code only evaluates mice fed the synthetic diet, but you simply repeat for mice in the semi-natural treatment and adjust the dietary protein sources accordingly. Lastly, this code can be used for all Essential Amino Acids (AA), but you must do one AA at a time.This code is for Ile, but you simply repeat for each respective AA. 
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Load MixSIAR package
+```{r}
+library(MixSIAR)
+```
+
+#Code used is from this tutorial:
+https://github.com/brianstock/MixSIAR
+
+#########Load mixture data
+Load the mixture/consumer data, i.e. your:
+- Consumer isotope values (d13C Ile muscle values from mice fed synthetic low, medium, and high protein diet treatments). 
+
+```{r}
+
+setwd("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/SIA/E1_E2_d13C Data/Microbial_Contribution_MixingModel/Synthetic MIXSIAR/Ile")
+
+# Load the mixture/consumer data
+mix <- load_mix_data(filename="E1_muscle_consumer_Ile.csv", 
+                     iso_names=c("d13CIle"), 
+                     factors=c("Percent_Protein"), 
+                     fac_random=c(TRUE), 
+                     fac_nested=c(NULL), 
+                     cont_effects=NULL) 
+```
+
+
+###Load source data
+Load the source data, i.e. your:
+- Source isotope values (dietary protein source; for this example its casein)
+
+```{r}
+setwd("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/SIA/E1_E2_d13C Data/Microbial_Contribution_MixingModel/Synthetic MIXSIAR/Ile")
+
+# Load the source data
+source <- load_source_data(filename= "E1_muscle_sources_Ile.csv",
+                           source_factors=NULL, 
+                           conc_dep=FALSE, 
+                           data_type="means", 
+                           mix)
+```
+
+####Load discrimination data
+See ?load_discr_data for details.
+
+Note that Galloway et al. 2014 conducted feeding trials to create a “resource library”. In the mixing model, the sources are actually consumers fed exclusively each of the sources. This allowed them to set the discrimination = 0 (see isopod_discrimination.csv). Here we do the same. We assumed direct routing of AAESS and applied trophic discrimination factors (TDFs) of zero as done previously, Manlick & Newsome 2022.  
+
+```{r}
+setwd("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/SIA/E1_E2_d13C Data/Microbial_Contribution_MixingModel/Synthetic MIXSIAR/Ile")
+
+discr <- load_discr_data(filename="E1_muscle_discrimination_Ile.csv", mix)
+```
+
+
+##Plot data
+This is your chance to check:
+
+Are the data loaded correctly?
+Is your mixture data in the source polygon?
+Are one or more of your sources confounded/hidden?
+When there are more than 2 biotracers, MixSIAR currently plots every pairwise combination. Here, that means (82)=28
+ plots are produced. In the future, MixSIAR will offer non-metric multidimensional scaling (NMDS) plots for these cases.
+ 
+ 
+```{r}
+# Make an isospace plot
+plot_data(filename="isospace_plot", plot_save_pdf=TRUE, plot_save_png=FALSE, mix,source,discr)
+```
+ 
+###Plot prior
+Define your prior, and then plot using “plot_prior”
+
+RED = your prior
+DARK GREY = “uninformative”/generalist (alpha = 1)
+LIGHT GREY = “uninformative” Jeffrey’s prior (alpha = 1/n.sources)
+
+```{r}
+# default "UNINFORMATIVE" / GENERALIST prior (alpha = 1)
+plot_prior(alpha.prior=1,source)
+```
+##Write JAGS model file
+In the Isopod Example we demo the “Residual only” error option. The differences between “Residual * Process”, “Residual only”, and “Process only” are explained in Stock and Semmens (2016). Also, looks like Alexi just did the residual as well, look into this further. 
+
+```{r}
+setwd("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/SIA/E1_E2_d13C Data/Microbial_Contribution_MixingModel/Synthetic MIXSIAR/Ile")
+# Write the JAGS model file
+model_filename <- "MixSIAR_model.txt"
+resid_err <- TRUE
+process_err <- FALSE
+write_JAGS_model(model_filename, resid_err, process_err, mix, source)
+```
+
+###Run model
+First use run = "test" to check if 1) the data are loaded correctly and 2) the model is specified correctly:
+
+```{r}
+jags.1 <- run_model(run="test", mix, source, discr, model_filename)
+```
+##After a test run works, increase the MCMC run to a value that may converge
+```{r}
+jags.1 <- run_model(run="normal", mix, source, discr, model_filename)
+```
+jags.1 will be an rjags object where you can access the MCMC chains for plotting, aggregating sources a posteriori, etc.
+
+####Analyze diagnostics and output
+First you can set output options like file names, plot file types, etc. (see ?output_JAGS for details).
+
+```{r}
+output_options <- list(summary_save = TRUE,
+                       summary_name = "summary_statistics",
+                       sup_post = FALSE,
+                       plot_post_save_pdf = TRUE,
+                       plot_post_name = "posterior_density",
+                       sup_pairs = FALSE,
+                       plot_pairs_save_pdf = TRUE,
+                       plot_pairs_name = "pairs_plot",
+                       sup_xy = TRUE,
+                       plot_xy_save_pdf = FALSE,
+                       plot_xy_name = "xy_plot",
+                       gelman = TRUE,
+                       heidel = FALSE,
+                       geweke = TRUE,
+                       diag_save = TRUE,
+                       diag_name = "diagnostics",
+                       indiv_effect = FALSE,
+                       plot_post_save_png = FALSE,
+                       plot_pairs_save_png = FALSE,
+                       plot_xy_save_png = FALSE,
+                       diag_save_ggmcmc = FALSE)
+```
+
+Then you can call `output_JAGS` to process diagnostics, summary statistics, and create posterior density plots:
+
+`output_JAGS(jags.1, mix, source, output_options)`
+
+For a thorough explanation of the output from output_JAGS, see the Wolves Example section of the MixSIAR Manual. You will also find examples of accessing the MCMC chains for post hoc plotting and analysis there.
+
+```{r}
+output_JAGS(jags.1, mix, source, output_options)
+```
+
+
