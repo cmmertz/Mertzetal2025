@@ -5,4 +5,6 @@
 
 **16S_DecontamRarefy.Rmd** This code details how to decontaminate and rarefy 16S microbiome and food data. Input is un-rarefied phyloseq object, output is cleaned and rarefied microbiome phyloseq object.
 
+**16S_DiversityComposition.Rmd** Script for alpha and beta diversity analyses for microbiome and diet data. Includes code for 16S alpha and beta diversity figures, and relative abundance figures.
+
 
