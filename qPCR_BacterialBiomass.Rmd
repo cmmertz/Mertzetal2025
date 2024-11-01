@@ -1,0 +1,1408 @@
+---
+title: "qPCR_BacterialBiomass"
+author: "Conner Mertz"
+date: "3/2/2023"
+output: html_document
+---
+
+Script used to perform statistical and visual analyses of qPCR bacterial biomass data. Code for qPCR figure is also included. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#load packages
+library(plyr); library(dplyr)
+library(metagMisc)
+library(ggplot2)
+library(ggforce)
+library(forcats)
+library(tidyverse)
+packageVersion("ggforce")
+library(FSA)
+
+
+## The easiest way to get forcats is to install the whole tidyverse:
+#install.packages("tidyverse")
+# Alternatively, install just forcats:
+#install.packages("forcats")
+#install.packages("ggforce")
+#install.packages("FSA")
+
+```
+Check out these turtorials for boxplots 
+http://www.sthda.com/english/wiki/ggplot2-box-plot-quick-start-guide-r-software-and-data-visualization
+
+https://r-charts.com/distribution/box-plot-group-ggplot2/
+
+https://www.youtube.com/watch?v=jc4cAZcJ9Bs
+
+Read in your data file
+```{r}
+E1_E2_qPCR <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/Meta_qPCR_E1_E2_16SCounts.csv")
+E1_E2_qPCR <- subset(E1_E2_qPCR, Animal.ID !="E2_D3_2_IL")
+
+
+```
+
+Prepare the data
+```{r}
+# Convert the variable Location from a numeric/character to a factor variable
+E1_E2_qPCR$Location <- as.factor(E1_E2_qPCR$Location) #I have gottom these plots to work without this step so it might not be necessary
+#class(E1_E2_qPCR$Location) #this checks what type of data you have
+#E1_E2_qPCR$Location
+E1_E2_qPCR$Percent_Protein <- as.factor(E1_E2_qPCR$Percent_Protein)
+
+#E1_E2_qPCR$raw_16S_Copies_per_gram <- as.numeric(E1_E2_qPCR$raw_16S_Copies_per_gram)
+#E1_E2_qPCR$adjusted_16S_Copies_per_gram <- as.numeric(E1_E2_qPCR$adjusted_16S_Copies_per_gram)
+```
+
+Subset your data depending on what you want to look at
+```{r}
+#E1 vs E2
+E1_qPCR <- subset(E1_E2_qPCR, Experiment=="E1")
+E2_qPCR <- subset(E1_E2_qPCR, Experiment=="E2")
+
+#E1 and E2 by location
+E1_E2_duod <- subset(E1_E2_qPCR, Location=="Duodenum")
+E1_E2_ile <- subset(E1_E2_qPCR, Location=="Ileum")
+E1_E2_cecum <- subset(E1_E2_qPCR, Location=="Cecum")
+
+#E1 vs E2 by location
+E1_duod <- subset(E1_qPCR, Location=="Duodenum")
+E1_ile <- subset(E1_qPCR, Location=="Ileum")
+E1_cecum <- subset(E1_qPCR, Location=="Cecum")
+E2_duod <- subset(E2_qPCR, Location=="Duodenum")
+E2_ile <- subset(E2_qPCR, Location=="Ileum")
+E2_cecum <- subset(E2_qPCR, Location=="Cecum")
+
+#E1 and E2 by Percent Protein
+E1_E2_2.5P <- subset(E1_E2_qPCR, Percent_Protein=="2.5P")
+E1_E2_5P <- subset(E1_E2_qPCR, Percent_Protein=="5P")
+E1_E2_10P <- subset(E1_E2_qPCR, Percent_Protein=="10P")
+
+#E1 by percent protein
+E1_2.5P <- subset(E1_qPCR, Percent_Protein=="2.5P")
+E1_5P <- subset(E1_qPCR, Percent_Protein=="5P")
+E1_10P <- subset(E1_qPCR, Percent_Protein=="10P")
+#E2 by percent protein
+E2_2.5P <- subset(E2_qPCR, Percent_Protein=="2.5P")
+E2_5P <- subset(E2_qPCR, Percent_Protein=="5P")
+E2_10P <- subset(E2_qPCR, Percent_Protein=="10P")
+
+#E1 by percent protein and location
+E1_duod_2.5P <- subset(E1_duod, Percent_Protein=="2.5P")
+E1_duod_5P <- subset(E1_duod, Percent_Protein=="5P")
+E1_duod_10P <- subset(E1_duod, Percent_Protein=="10P")
+E1_ile_2.5P <- subset(E1_ile, Percent_Protein=="2.5P")
+E1_ile_5P <- subset(E1_ile, Percent_Protein=="5P")
+E1_ile_10P <- subset(E1_ile, Percent_Protein=="10P")
+E1_cec_2.5P <- subset(E1_cecum, Percent_Protein=="2.5P")
+E1_cec_5P <- subset(E1_cecum, Percent_Protein=="5P")
+E1_cec_10P <- subset(E1_cecum, Percent_Protein=="10P")
+
+#E2 by percent protein and location
+E2_duod_2.5P <- subset(E2_duod, Percent_Protein=="2.5P")
+E2_duod_5P <- subset(E2_duod, Percent_Protein=="5P")
+E2_duod_10P <- subset(E2_duod, Percent_Protein=="10P")
+E2_ile_2.5P <- subset(E2_ile, Percent_Protein=="2.5P")
+E2_ile_5P <- subset(E2_ile, Percent_Protein=="5P")
+E2_ile_10P <- subset(E2_ile, Percent_Protein=="10P")
+E2_cec_2.5P <- subset(E2_cecum, Percent_Protein=="2.5P")
+E2_cec_5P <- subset(E2_cecum, Percent_Protein=="5P")
+E2_cec_10P <- subset(E2_cecum, Percent_Protein=="10P")
+```
+
+#Set up- colors to match location
+
+```{r}
+#first you want to factor your items. These are the names of the Location in the order I want them to be every time. 
+E1_E2_qPCR$Location <-factor(E1_E2_qPCR$Location, levels=c("Duodenum", "Ileum", "Cecum"))
+
+#now create an object that is a list of colors in a certain order.The colors I chose are "color-blind friendly":
+LocationScale <- c("#440a48","#47da7a","#dba0ff")
+scales::show_col(LocationScale)
+
+#now we want to merge the two. We are taking the order from the locations and telling it that it needs to match the order from the cbPalette.
+names(LocationScale) <- levels(E1_E2_qPCR$Location)
+#Have you ever used the scale_colour_manual command? Now we can combine that command and all of the stuff we want in it into a new object, LocationColors. At the end of your ggplot code, just add a +LocationColors (or whatever you decide to name it), and it should pull the colors you made! 
+#LocationColors<- scale_fill_manual(name="Location", values=LocationScale)
+LocationColors<- scale_colour_manual(name="Location", values=LocationScale)
+
+
+
+#Exp_Location
+#first you want to factor your items. These are the names of the Location in the order I want them to be every time. 
+E1_E2_qPCR$Exp_Location <-factor(E1_E2_qPCR$Exp_Location, levels=c("E1_DUOD", "E2_DUOD", "E1_IL", "E2_IL", "E1_CEC", "E2_CEC"))
+
+#now create an object that is a list of colors in a certain order.The colors I chose are "color-blind friendly":
+Exp_LocationScale <- c("#440a48","#440a48", "#47da7a","#47da7a", "#dba0ff", "#dba0ff")
+scales::show_col(Exp_LocationScale)
+
+#now we want to merge the two. We are taking the order from the locations and telling it that it needs to match the order from the cbPalette.
+names(Exp_LocationScale) <- levels(E1_E2_qPCR$Exp_Location)
+#Have you ever used the scale_colour_manual command? Now we can combine that command and all of the stuff we want in it into a new object, LocationColors. At the end of your ggplot code, just add a +LocationColors (or whatever you decide to name it), and it should pull the colors you made! 
+#LocationColors<- scale_fill_manual(name="Location", values=LocationScale)
+Exp_LocationColors<- scale_colour_manual(name="Exp_Location", values=Exp_LocationScale)
+```
+#Set up- colors to match diet treatment
+```{r}
+#first you want to factor your items. These are the names of the Location in the order I want them to be every time. 
+E1_E2_qPCR$Percent_Protein <-factor(E1_E2_qPCR$Percent_Protein, levels=c("2.5P", "5P", "10P"))
+
+#now create an object that is a list of colors in a certain order.The colors I chose are "color-blind friendly":
+DietScale <- c("#cb146e", "#f7ce45","#1983fc")
+scales::show_col(DietScale)
+
+#now we want to merge the two. We are taking the order from the locations and telling it that it needs to match the order from the cbPalette.
+names(DietScale) <- levels(E1_E2_qPCR$Percent_Protein)
+#Have you ever used the scale_colour_manual command? Now we can combine that command and all of the stuff we want in it into a new object, LocationColors. At the end of your ggplot code, just add a +DietColor (or whatever you decide to name it), and it should pull the colors you made! 
+DietColors<- scale_fill_manual(name="Percent_Protein", values=DietScale)
+
+```
+
+```{r}
+#X axes for Percent_Protein
+#repeat for each major phyloseq object I have created
+#indicate levels
+Percent_Protein.orderALL <- c("2.5P", "5P", "10P") #these will have all of the diet treatments 
+
+E1_E2_qPCR$Percent_Protein <- factor(E1_E2_qPCR$Percent_Protein, levels= Percent_Protein.orderALL)
+#levels(get_variable(E1_E2_qPCR, "Percent_Protein"))
+
+class(E1_E2_qPCR$Percent_Protein)
+```
+
+```{r}
+#X axes for Exp_Location
+#repeat for each major phyloseq object I have created
+#indicate levels
+Exp_Location.orderALL <- c("E1_DUOD", "E2_DUOD", "E1_IL", "E2_IL", "E1_CEC", "E2_CEC") 
+E1_E2_qPCR$Exp_Location <- factor(E1_E2_qPCR$Exp_Location, levels= Exp_Location.orderALL)
+#levels(get_variable(E1_E2_qPCR, "Exp_Location"))
+
+```
+
+```{r}
+#Overall-E1_E2 raw basicboxplot
+E1_E2_overall_raw <- ggplot(E1_E2_qPCR, aes(x=Experiment, y=raw_16S_Copies_per_gram)) + 
+  geom_boxplot()+
+  scale_y_continuous(name = "raw_16S_Copies_per_gram", limits = c(0,1.7e+12 ))+
+  #ylim(0, 200000000000)+
+  theme_bw()+
+  labs(title = "Synthetic vs Semi-natural Raw 16S Copies per gram")+
+  theme(
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=14),
+    legend.title = element_text(color="black", size=16),
+    legend.text = element_text(color="black", size=14),
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=16),
+    axis.title.y = element_text(color="black", size=16, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+#pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_E2_overall_raw.pdf", height = 8, width = 11)
+E1_E2_overall_raw
+#dev.off()
+E1_E2_overall_raw
+#overall mean 
+#calculate mean using raw name
+mean(E1_qPCR$raw_16S_Copies_per_gram)
+median(E1_qPCR$raw_16S_Copies_per_gram)
+max(E1_qPCR$raw_16S_Copies_per_gram)
+mean(E2_qPCR$raw_16S_Copies_per_gram)
+median(E2_qPCR$raw_16S_Copies_per_gram)
+max(E2_qPCR$raw_16S_Copies_per_gram)
+
+# perform an ANOVA to look for differences in raw 16S copies per gram values among experiment (***** means very significant)
+raw.aov <- aov(raw_16S_Copies_per_gram ~ Experiment, data = E1_E2_qPCR)
+summary(raw.aov)
+# perform pairwise comparisons using Tukey Honest Significant Differences
+TukeyHSD(raw.aov)
+#shows that comparison "E2-E1 " is not over 0.05 so E1 and E2 do not have significantly different 16S copies per gram values. 
+
+kruskal.test(raw_16S_Copies_per_gram ~ Experiment, data = E1_E2_qPCR)
+#perform Dunn's Test with Holm correction for p-values
+dunnTest(adjusted_16S_Copies_per_gram ~ Experiment,
+         data=E1_E2_qPCR,
+         method="holm")
+pairwise.wilcox.test(E1_E2_qPCR$raw_16S_Copies_per_gram, E1_E2_qPCR$Experiment,
+                 p.adjust.method = "BH")
+
+```
+
+
+```{r}
+#E1_E2 comparing just Location (raw)
+E1_E2_Location_raw <- ggplot(E1_E2_qPCR, aes(x=Experiment, y=raw_16S_Copies_per_gram, fill= Location)) + 
+  LocationColors+
+  geom_boxplot()+
+  facet_wrap(~ Location, scales = "free", ncol= "3")+
+  theme_bw()+
+  labs(title = "Location compaisons for raw 16S Copies per gram")+
+  theme(
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=14),
+    legend.title = element_text(color="black", size=16),
+    legend.text = element_text(color="black", size=14),
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=16),
+    axis.title.y = element_text(color="black", size=16, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_E2_Location_raw.pdf", height = 8, width = 11)
+E1_E2_Location_raw
+#dev.off()
+E1_E2_Location_raw
+#overall mean 
+#calculate E1+E2 mean using raw by Location
+mean(E1_E2_duod$raw_16S_Copies_per_gram)
+mean(E1_E2_ile$raw_16S_Copies_per_gram)
+mean(E1_E2_cecum$raw_16S_Copies_per_gram)
+#calculate E1 OR E2 mean using raw by Location
+mean(E1_duod$raw_16S_Copies_per_gram)
+mean(E1_ile$raw_16S_Copies_per_gram)
+mean(E1_cecum$raw_16S_Copies_per_gram)
+mean(E2_duod$raw_16S_Copies_per_gram)
+mean(E2_ile$raw_16S_Copies_per_gram)
+mean(E2_cecum$raw_16S_Copies_per_gram)
+
+#E1
+# perform an ANOVA to look for differences in raw 16S copies per gram values among Location (***** means very significant)
+raw.aov <- aov(raw_16S_Copies_per_gram ~ Location, data = E1_qPCR)
+summary(raw.aov)
+#this shows ile is significantly different by species
+# perform pairwise comparisons using Tukey Honest Significant Differences
+TukeyHSD(raw.aov)
+#shows that 1 comparison "green-fito " is just over 0.05 so green alge and fito does not have significantly different isoleucine values. All the other groups are significantly different. 
+
+#E2
+# perform an ANOVA to look for differences in raw 16S copies per gram values among Location (***** means very significant)
+raw.aov <- aov(raw_16S_Copies_per_gram ~ Location, data = E2_qPCR)
+summary(raw.aov)
+#this shows ile is significantly different by species
+# perform pairwise comparisons using Tukey Honest Significant Differences
+TukeyHSD(raw.aov)
+#shows that 1 comparison "green-fito " is just over 0.05 so green alge and fito does not have significantly different isoleucine values. All the other groups are significantly different.  
+
+```
+
+
+```{r}
+#E1 vs E2 by location Raw
+E1_E2_raw_boxplotLoc <- ggplot(E1_E2_qPCR, aes(x=Location, y=raw_16S_Copies_per_gram, fill= Location)) + 
+  geom_boxplot() +
+  LocationColors +
+  labs(x = "", y = "raw_16S_Copies_per_gram\n", title = "E1_E2_raw_16S_Copies_per_gram by Gut section") +
+  facet_wrap(Experiment~ Location, scales = "free", ncol= "3")  +
+  theme_bw() +
+  theme(
+    title =element_text(size=24, face='bold'),
+    axis.text.x = element_text(color="black", size=18),
+    axis.text.y = element_text(color="black", size=18),
+    strip.text.y = element_text(color="black", size=18),
+    legend.title = element_text(color="black", size=22),
+    legend.text = element_text(color="black", size=20),
+    legend.position = "right",
+     strip.text = element_text(size = 22),
+    axis.title.x = element_text(color="black", size=20),
+    axis.title.y = element_text(color="black", size=20, angle=90),
+    panel.grid.major = element_blank(), # switch off major gridlines
+    panel.grid.minor = element_blank(), # switch off minor gridlines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+E1_E2_raw_boxplotLoc
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_E2_raw_boxplotLoc.pdf", height = 8, width = 11)
+E1_E2_raw_boxplotLoc
+#dev.off()
+E1_E2_raw_boxplotLoc
+#raw mean E1
+mean(E1_duod$raw_16S_Copies_per_gram)
+mean(E1_ile$raw_16S_Copies_per_gram)
+mean(E1_cecum$raw_16S_Copies_per_gram)
+
+#rar mean E2
+mean(E2_duod$raw_16S_Copies_per_gram)
+mean(E2_ile$raw_16S_Copies_per_gram)
+mean(E2_cecum$raw_16S_Copies_per_gram)
+
+```
+
+```{r}
+#E1 vs E2 by Percent Protein Raw
+E1_E2_raw_boxplotProtein <- ggplot(E1_E2_qPCR, aes(x=Percent_Protein, y=raw_16S_Copies_per_gram, fill= Percent_Protein)) + 
+  geom_boxplot() +
+  DietColors +
+  labs(x = "", y = "raw_16S_Copies_per_gram\n", title = "E1_E2_raw_16S_Copies_per_gram\n by Percent Protein") +
+  facet_wrap(Experiment~ Percent_Protein, scales = "free", ncol= "3")  +
+  theme_bw() +
+  theme(
+    title =element_text(size=24, face='bold'),
+    axis.text.x = element_text(color="black", size=18),
+    axis.text.y = element_text(color="black", size=18),
+    strip.text.y = element_text(color="black", size=18),
+    legend.title = element_text(color="black", size=22),
+    legend.text = element_text(color="black", size=20),
+    legend.position = "right",
+     strip.text = element_text(size = 22),
+    axis.title.x = element_text(color="black", size=20),
+    axis.title.y = element_text(color="black", size=20, angle=90),
+    panel.grid.major = element_blank(), # switch off major gridlines
+    panel.grid.minor = element_blank(), # switch off minor gridlines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+E1_E2_raw_boxplotProtein
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_E2_raw_boxplotProtein.pdf", height = 8, width = 11)
+E1_E2_raw_boxplotProtein
+#dev.off()
+E1_E2_raw_boxplotProtein
+
+#raw mean E1
+mean(E1_2.5P$raw_16S_Copies_per_gram)
+mean(E1_5P$raw_16S_Copies_per_gram)
+mean(E1_10P$raw_16S_Copies_per_gram)
+
+#rar mean E2
+mean(E2_2.5P$raw_16S_Copies_per_gram)
+mean(E2_5P$raw_16S_Copies_per_gram)
+mean(E2_10P$raw_16S_Copies_per_gram)
+
+#E1
+# perform an ANOVA to look for differences in raw 16S copies per gram values by diet (***** means very significant)
+raw.aov <- aov(raw_16S_Copies_per_gram ~ Percent_Protein, data = E1_qPCR)
+summary(raw.aov)
+#this shows Percent protein is not significant
+# perform pairwise comparisons using Tukey Honest Significant Differences
+TukeyHSD(raw.aov)
+#shows no comparisons (5P to 2.5P, 10P to 2.5P, 10P to 5P) are significantly different
+#E2
+# perform an ANOVA to look for differences in raw 16S copies per gram values by diet (***** means very significant)
+raw.aov <- aov(raw_16S_Copies_per_gram ~ Percent_Protein, data = E2_qPCR)
+summary(raw.aov)
+#this shows Percent protein is not significant
+# perform pairwise comparisons using Tukey Honest Significant Differences
+TukeyHSD(raw.aov)
+#shows no comparisons (5P to 2.5P, 10P to 2.5P, 10P to 5P) are significantly different
+```
+
+```{r}
+#THIS PLOT LOOKS GREAT!
+E1_E2_raw_boxplotALL <- ggplot(E1_E2_qPCR, aes(x=Percent_Protein, y=raw_16S_Copies_per_gram, fill= Percent_Protein)) + 
+  geom_boxplot() +
+  DietColors +
+  labs(x = "", y = "raw_16S_Copies_per_gram\n", title = "E1_E2_raw_16S_Copies_per_gram") +
+  facet_wrap(Experiment~ Location, scales = "free", ncol= "3")  +
+  theme_bw() +
+  theme(
+    title =element_text(size=24, face='bold'),
+    axis.text.x = element_text(color="black", size=18),
+    axis.text.y = element_text(color="black", size=18),
+    strip.text.y = element_text(color="black", size=18),
+    legend.title = element_text(color="black", size=22),
+    legend.text = element_text(color="black", size=20),
+    legend.position = "right",
+     strip.text = element_text(size = 22),
+    axis.title.x = element_text(color="black", size=20),
+    axis.title.y = element_text(color="black", size=20, angle=90),
+    panel.grid.major = element_blank(), # switch off major gridlines
+    panel.grid.minor = element_blank(), # switch off minor gridlines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+E1_E2_raw_boxplotALL
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_E2_raw_boxplotALL.pdf", height = 8, width = 11)
+E1_E2_raw_boxplotALL
+#dev.off()
+E1_E2_raw_boxplotALL
+
+
+#overall mean 
+#calculate E1 and E2 mean using raw by Percent Protein and Location
+mean(E1_duod_2.5P$raw_16S_Copies_per_gram)
+mean(E1_ile_2.5P$raw_16S_Copies_per_gram)
+mean(E1_cec_2.5P$raw_16S_Copies_per_gram)
+mean(E1_duod_5P$raw_16S_Copies_per_gram)
+mean(E1_ile_5P$raw_16S_Copies_per_gram)
+mean(E1_cec_5P$raw_16S_Copies_per_gram)
+mean(E1_duod_10P$raw_16S_Copies_per_gram)
+mean(E1_ile_10P$raw_16S_Copies_per_gram)
+mean(E1_cec_10P$raw_16S_Copies_per_gram)
+
+mean(E2_duod_2.5P$raw_16S_Copies_per_gram)
+mean(E2_ile_2.5P$raw_16S_Copies_per_gram)
+mean(E2_cec_2.5P$raw_16S_Copies_per_gram)
+mean(E2_duod_5P$raw_16S_Copies_per_gram)
+mean(E2_ile_5P$raw_16S_Copies_per_gram)
+mean(E2_cec_5P$raw_16S_Copies_per_gram)
+mean(E2_duod_10P$raw_16S_Copies_per_gram)
+mean(E2_ile_10P$raw_16S_Copies_per_gram)
+mean(E2_cec_10P$raw_16S_Copies_per_gram)
+
+
+#E1
+# perform an ANOVA to look for differences in raw 16S copies per gram values by Location and Percent Protein (***** means very significant)
+raw.aov <- aov(raw_16S_Copies_per_gram ~ Location + Percent_Protein, data = E1_qPCR)
+summary(raw.aov)
+#this shows ile is significantly different by species
+# perform pairwise comparisons using Tukey Honest Significant Differences
+TukeyHSD(raw.aov)
+#shows that 1 comparison "green-fito " is just over 0.05 so green alge and fito does not have significantly different isoleucine values. All the other groups are significantly different. 
+
+raw.aov <- aov(raw_16S_Copies_per_gram ~ Location + Percent_Protein, data = E1_qPCR)
+
+#E2
+# perform an ANOVA to look for differences in raw 16S copies per gram values among Location (***** means very significant)
+raw.aov <- aov(raw_16S_Copies_per_gram ~ Location + Percent_Protein, data = E2_qPCR)
+summary(raw.aov)
+# perform pairwise comparisons using Tukey Honest Significant Differences
+TukeyHSD(raw.aov)
+
+
+```
+
+
+
+
+
+
+
+
+##########NOW REPEAT BUT FOR ADJUSTED######################
+
+```{r}
+#Overall-E1_E2 adjusted basicboxplot
+E1_E2_overall_adjusted <- ggplot(E1_E2_qPCR, aes(x=Experiment, y=adjusted_16S_Copies_per_gram)) + 
+  geom_boxplot()+
+  scale_y_continuous(name = "adjusted_16S_Copies_per_gram", limits = c(0,1.0e+11 ))+
+  #ylim(0, 200000000000)+
+  theme_bw()+
+  labs(title = "Synthetic vs Semi-natural adjusted 16S Copies per gram")+
+  theme(
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=14),
+    legend.title = element_text(color="black", size=16),
+    legend.text = element_text(color="black", size=14),
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=16),
+    axis.title.y = element_text(color="black", size=16, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_E2_overall_adjusted.pdf", height = 8, width = 11)
+E1_E2_overall_adjusted
+#dev.off()
+E1_E2_overall_adjusted
+#overall mean 
+#calculate mean using adjusted name
+mean(E1_qPCR$adjusted_16S_Copies_per_gram)
+median(E1_qPCR$adjusted_16S_Copies_per_gram)
+max(E1_qPCR$adjusted_16S_Copies_per_gram)
+mean(E2_qPCR$adjusted_16S_Copies_per_gram)
+median(E2_qPCR$adjusted_16S_Copies_per_gram)
+max(E2_qPCR$adjusted_16S_Copies_per_gram)
+
+# perform an ANOVA to look for differences in adjusted 16S copies per gram values among experiment (***** means very significant)
+adjusted.aov <- aov(adjusted_16S_Copies_per_gram ~ Experiment, data = E1_E2_qPCR)
+summary(adjusted.aov)
+# perform pairwise comparisons using Tukey Honest Significant Differences
+TukeyHSD(adjusted.aov)
+#shows that comparison "E2-E1 " is not over 0.05 so E1 and E2 do not have significantly different 16S copies per gram values. 
+
+#literature that measures bacterial load uses Kruskal-Wallis test and then Holm-adjusted Dunn tests to test for significance. So lets also do that. Follow this tutorial:https://www.statology.org/dunns-test-in-r/
+kruskal.test(adjusted_16S_Copies_per_gram~ Experiment, data = E1_E2_qPCR)
+#perform Dunn's Test with Holm correction for p-values
+dunnTest(adjusted_16S_Copies_per_gram ~ Experiment,
+         data=E1_E2_qPCR,
+         method="holm")
+pairwise.wilcox.test(E1_E2_qPCR$adjusted_16S_Copies_per_gram, E1_E2_qPCR$Experiment,
+                 p.adjust.method = "BH")
+
+```
+
+```{r}
+#E1_E2 comparing just Location (adjusted)
+E1_E2_Location_adjusted <- ggplot(E1_E2_qPCR, aes(x=Experiment, y=adjusted_16S_Copies_per_gram, fill= Location)) + 
+  LocationColors+
+  geom_boxplot()+
+  facet_wrap(~ Location, scales = "free", ncol= "3")+
+  theme_bw()+
+  labs(title = "Location comparisons for adjusted 16S Copies per gram")+
+  theme(
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=14),
+    legend.title = element_text(color="black", size=16),
+    legend.text = element_text(color="black", size=14),
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=16),
+    axis.title.y = element_text(color="black", size=16, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_E2_Location_adjusted.pdf", height = 8, width = 11)
+E1_E2_Location_adjusted
+#dev.off()
+E1_E2_Location_adjusted
+#overall mean 
+#calculate E1+E2 mean using adjusted by Location
+mean(E1_E2_duod$adjusted_16S_Copies_per_gram)
+mean(E1_E2_ile$adjusted_16S_Copies_per_gram)
+mean(E1_E2_cecum$adjusted_16S_Copies_per_gram)
+#calculate E1 OR E2 mean using adjusted by Location
+mean(E1_duod$adjusted_16S_Copies_per_gram)
+mean(E1_ile$adjusted_16S_Copies_per_gram)
+mean(E1_cecum$adjusted_16S_Copies_per_gram)
+mean(E2_duod$adjusted_16S_Copies_per_gram)
+mean(E2_ile$adjusted_16S_Copies_per_gram)
+mean(E2_cecum$adjusted_16S_Copies_per_gram)
+
+#E1
+# perform an ANOVA to look for differences in adjusted 16S copies per gram values among Location (***** means very significant)
+adjusted.aov <- aov(adjusted_16S_Copies_per_gram ~ Location, data = E1_qPCR)
+summary(adjusted.aov)
+# perform pairwise comparisons using Tukey Honest Significant Differences
+TukeyHSD(adjusted.aov)
+#shows that 1 comparison "green-fito " is just over 0.05 so green alge and fito does not have significantly different isoleucine values. All the other groups are significantly different. 
+
+#literature that measures bacterial load uses Kruskal-Wallis test and then Holm-adjusted Dunn tests to test for significance. So lets also do that. Follow this tutorial:https://www.statology.org/dunns-test-in-r/
+kruskal.test(adjusted_16S_Copies_per_gram~ Location, data = E1_qPCR)
+#perform Dunn's Test with Holm correction for p-values
+dunnTest(adjusted_16S_Copies_per_gram ~ Location,
+         data=E1_qPCR,
+         method="holm")
+
+#E2
+# perform an ANOVA to look for differences in adjusted 16S copies per gram values among Location (***** means very significant)
+adjusted.aov <- aov(adjusted_16S_Copies_per_gram ~ Location, data = E2_qPCR)
+summary(adjusted.aov)
+#this shows ile is significantly different by species
+# perform pairwise comparisons using Tukey Honest Significant Differences
+TukeyHSD(adjusted.aov)
+#shows that 1 comparison "green-fito " is just over 0.05 so green alge and fito does not have significantly different isoleucine values. All the other groups are significantly different.  
+
+#literature that measures bacterial load uses Kruskal-Wallis test and then Holm-adjusted Dunn tests to test for significance. So lets also do that. Follow this tutorial:https://www.statology.org/dunns-test-in-r/
+kruskal.test(adjusted_16S_Copies_per_gram~ Location, data = E2_qPCR)
+#perform Dunn's Test with Holm correction for p-values
+dunnTest(adjusted_16S_Copies_per_gram ~ Location,
+         data=E2_qPCR,
+         method="holm")
+
+
+```
+
+```{r}
+#E1 vs E2 by location adjusted
+E1_E2_adjusted_boxplotLoc <- ggplot(E1_E2_qPCR, aes(x=Location, y=adjusted_16S_Copies_per_gram, fill= Location)) + 
+  geom_boxplot() +
+  LocationColors +
+  labs(x = "", y = "adjusted_16S_Copies_per_gram\n", title = "E1_E2_adjusted_16S_Copies_per_gram by Gut section") +
+  facet_wrap(Experiment~ Location, scales = "free", ncol= NULL)  +
+  theme_bw() +
+  theme(
+    title =element_text(size=24, face='bold'),
+    axis.text.x = element_text(color="black", size=18),
+    axis.text.y = element_text(color="black", size=18),
+    strip.text.y = element_text(color="black", size=18),
+    legend.title = element_text(color="black", size=22),
+    legend.text = element_text(color="black", size=20),
+    legend.position = "right",
+     strip.text = element_text(size = 22),
+    axis.title.x = element_text(color="black", size=20),
+    axis.title.y = element_text(color="black", size=20, angle=90),
+    panel.grid.major = element_blank(), # switch off major gridlines
+    panel.grid.minor = element_blank(), # switch off minor gridlines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+E1_E2_adjusted_boxplotLoc
+#pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_E2_adjusted_boxplotLoc.pdf", height = 8, width = 11)
+E1_E2_adjusted_boxplotLoc
+#dev.off()
+E1_E2_adjusted_boxplotLoc
+#adjusted mean E1
+mean(E1_duod$adjusted_16S_Copies_per_gram)
+mean(E1_ile$adjusted_16S_Copies_per_gram)
+mean(E1_cecum$adjusted_16S_Copies_per_gram)
+
+#rar mean E2
+mean(E2_duod$adjusted_16S_Copies_per_gram)
+mean(E2_ile$adjusted_16S_Copies_per_gram)
+mean(E2_cecum$adjusted_16S_Copies_per_gram)
+
+```
+
+#figure for Manuscript:
+#Fig is in supplemental
+```{r}
+E1_E2_qPCR$log_adjusted_16S_Copies_per_gram=log(E1_E2_qPCR$adjusted_16S_Copies_per_gram) #do log transformation
+E1_E2_Location_scatter <-ggplot(E1_E2_qPCR, aes(x=Exp_Location, y=log_adjusted_16S_Copies_per_gram)) +
+  geom_boxplot(data = E1_E2_qPCR$data,alpha = 0.5, outlier.size=0.1, na.rm=TRUE, position="dodge")+
+geom_point(aes(alpha=0.8, size=1, color= Location, shape= Experiment),position=position_jitterdodge(jitter.width=0.08, jitter.height=0, dodge.width=0.75, seed=NA))+
+ labs(x = "Gut Section", y = "log(bacterial load) 16S rRNA gene copies per gram\n") +
+theme_bw() +
+  LocationColors +
+  theme(
+    axis.text.x = element_text(color="black", size=14),
+    axis.text.y = element_text(color="black", size=16),
+    strip.text.y = element_text(color="black", size=16),
+    legend.title = element_text(color="black", size=22),
+    legend.text = element_text(color="black", size=16),
+    legend.position = "right",
+    strip.background = element_blank(), #to remove facet wrap title
+    strip.text = element_text(size = 20),
+    axis.title.x = element_text(color="black", size=22),
+    axis.title.y = element_text(color="black", size=22, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+#E1_E2_Location_scatter$layers <- E1_E2_Location_scatter$layers[-1] 
+pdf("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/FINAL plots/qPCR_E1_E2_adjusted_boxplot.pdf", height = 10, width = 11)
+E1_E2_Location_scatter
+```
+
+
+```{r}
+E1_E2_qPCR$log_adjusted_16S_Copies_per_gram=log(E1_E2_qPCR$adjusted_16S_Copies_per_gram) #do log transformation
+E1_E2_overall_adj <- ggplot(E1_E2_qPCR, aes(x=Experiment, y=log_adjusted_16S_Copies_per_gram)) + 
+  geom_boxplot()+
+  #scale_y_continuous(name = "raw_16S_Copies_per_gram", limits = c(0,1.7e+12 ))+
+  #ylim(0, 200000000000)+
+  theme_bw()+
+  labs(title = "Synthetic vs Semi-natural 16S Copies per gram")+
+  theme(
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=14),
+    legend.title = element_text(color="black", size=16),
+    legend.text = element_text(color="black", size=14),
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=16),
+    axis.title.y = element_text(color="black", size=16, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+E1_E2_overall_adj
+
+
+E1_E2_Location_scatter <-ggplot(E1_E2_qPCR, aes(x=Exp_Location, y=log_adjusted_16S_Copies_per_gram)) +
+  geom_boxplot(data = E1_E2_qPCR$data,alpha = 0.5, outlier.size=0.1, na.rm=TRUE, position="dodge")+
+geom_point(aes(alpha=0.8, size=1, color= Location, shape= Experiment),position=position_jitterdodge(jitter.width=0.08, jitter.height=0, dodge.width=0.75, seed=NA))+
+ labs(x = "Gut Section", y = "log(bacterial load) 16S rRNA gene copies per gram\n") +
+theme_bw() +
+  LocationColors +
+  theme(
+    axis.text.x = element_text(color="black", size=14),
+    axis.text.y = element_text(color="black", size=16),
+    strip.text.y = element_text(color="black", size=16),
+    legend.title = element_text(color="black", size=22),
+    legend.text = element_text(color="black", size=16),
+    legend.position = "right",
+    strip.background = element_blank(), #to remove facet wrap title
+    strip.text = element_text(size = 20),
+    axis.title.x = element_text(color="black", size=22),
+    axis.title.y = element_text(color="black", size=22, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+#E1_E2_Location_scatter$layers <- E1_E2_Location_scatter$layers[-1] 
+pdf("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/FINAL plots/qPCR_E1_E2_adjusted_boxplot.pdf", height = 10, width = 11)
+E1_E2_Location_scatter
+```
+
+stats for paper
+```{r}
+#literature that measures bacterial load uses Kruskal-Wallis test and then Holm-adjusted Dunn tests to test for significance. So lets also do that. Follow this tutorial:https://www.statology.org/dunns-test-in-r/
+#E1 vs E2 overall: 
+kruskal.test(adjusted_16S_Copies_per_gram~ Experiment, data = E1_E2_qPCR) #sig dif
+
+#E1 vs E2 overall: 
+kruskal.test(adjusted_16S_Copies_per_gram~ Location, data = E1_E2_qPCR) #sig dif
+
+#E1 vs E2 overall: 
+kruskal.test(adjusted_16S_Copies_per_gram~ Percent_Protein, data = E1_E2_qPCR) #not significantly diff
+
+#E1 vs E2 by location
+kruskal.test(adjusted_16S_Copies_per_gram~ Exp_Location, data = E1_E2_qPCR)
+#perform Dunn's Test with Holm correction for p-values
+Holm_adjusted_Dunn_tests_Exp_Location <- dunnTest(adjusted_16S_Copies_per_gram ~ Exp_Location,
+         data=E1_E2_qPCR,
+         method="holm")
+Holm_adjusted_Dunn_tests_Exp_Location
+
+#E1 by location
+kruskal.test(adjusted_16S_Copies_per_gram~ Exp_Location, data = E1_qPCR)
+#perform Dunn's Test with Holm correction for p-values
+Holm_adjusted_Dunn_tests_Exp_Location <- dunnTest(adjusted_16S_Copies_per_gram ~ Exp_Location,
+         data=E1_qPCR,
+         method="holm")
+Holm_adjusted_Dunn_tests_Exp_Location
+
+#E2 by location
+kruskal.test(adjusted_16S_Copies_per_gram~ Exp_Location, data = E2_qPCR)
+#perform Dunn's Test with Holm correction for p-values
+Holm_adjusted_Dunn_tests_Exp_Location <- dunnTest(adjusted_16S_Copies_per_gram ~ Exp_Location,
+         data=E2_qPCR,
+         method="holm")
+Holm_adjusted_Dunn_tests_Exp_Location
+
+
+
+```
+
+
+
+```{r}
+#E1 vs E2 by Percent Protein adjusted
+E1_E2_adjusted_boxplotProtein <- ggplot(E1_E2_qPCR, aes(x=Percent_Protein, y=adjusted_16S_Copies_per_gram, fill= Percent_Protein)) + 
+  geom_boxplot() +
+  DietColors +
+  labs(x = "", y = "adjusted_16S_Copies_per_gram\n", title = "E1_E2_adjusted_16S_Copies_per_gram\n by Percent Protein") +
+  facet_wrap(Experiment~ Percent_Protein, scales = "free", ncol= "3")  +
+  theme_bw() +
+  theme(
+    title =element_text(size=24, face='bold'),
+    axis.text.x = element_text(color="black", size=18),
+    axis.text.y = element_text(color="black", size=18),
+    strip.text.y = element_text(color="black", size=18),
+    legend.title = element_text(color="black", size=22),
+    legend.text = element_text(color="black", size=20),
+    legend.position = "right",
+     strip.text = element_text(size = 22),
+    axis.title.x = element_text(color="black", size=20),
+    axis.title.y = element_text(color="black", size=20, angle=90),
+    panel.grid.major = element_blank(), # switch off major gridlines
+    panel.grid.minor = element_blank(), # switch off minor gridlines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+E1_E2_adjusted_boxplotProtein
+#pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_E2_adjusted_boxplotProtein.pdf", height = 8, width = 11)
+E1_E2_adjusted_boxplotProtein
+#dev.off()
+E1_E2_adjusted_boxplotProtein
+
+#adjusted mean E1
+mean(E1_2.5P$adjusted_16S_Copies_per_gram)
+mean(E1_5P$adjusted_16S_Copies_per_gram)
+mean(E1_10P$adjusted_16S_Copies_per_gram)
+
+#adjusted mean E2
+mean(E2_2.5P$adjusted_16S_Copies_per_gram)
+mean(E2_5P$adjusted_16S_Copies_per_gram)
+mean(E2_10P$adjusted_16S_Copies_per_gram)
+
+#E1
+# perform an ANOVA to look for differences in adjusted 16S copies per gram values by diet (***** means very significant)
+adjusted.aov <- aov(adjusted_16S_Copies_per_gram ~ Percent_Protein, data = E1_qPCR)
+summary(adjusted.aov)
+#this shows Percent protein is not significant
+# perform pairwise comparisons using Tukey Honest Significant Differences
+TukeyHSD(adjusted.aov)
+#shows no comparisons (5P to 2.5P, 10P to 2.5P, 10P to 5P) are significantly different
+#E2
+# perform an ANOVA to look for differences in adjusted 16S copies per gram values by diet (***** means very significant)
+adjusted.aov <- aov(adjusted_16S_Copies_per_gram ~ Percent_Protein, data = E2_qPCR)
+summary(adjusted.aov)
+#this shows Percent protein is not significant
+# perform pairwise comparisons using Tukey Honest Significant Differences
+TukeyHSD(adjusted.aov)
+#shows no comparisons (5P to 2.5P, 10P to 2.5P, 10P to 5P) are significantly different
+```
+
+```{r}
+#THIS PLOT LOOKS GREAT!
+E1_E2_adjusted_boxplotALL <- ggplot(E1_E2_qPCR, aes(x=Percent_Protein, y=adjusted_16S_Copies_per_gram, fill= Percent_Protein)) + 
+  geom_boxplot() +
+  DietColors +
+  labs(x = "", y = "adjusted_16S_Copies_per_gram\n", title = "E1_E2_adjusted_16S_Copies_per_gram") +
+  facet_wrap(Experiment~ Location, scales = "free", ncol= "3")  +
+  theme_bw() +
+  theme(
+    title =element_text(size=24, face='bold'),
+    axis.text.x = element_text(color="black", size=18),
+    axis.text.y = element_text(color="black", size=18),
+    strip.text.y = element_text(color="black", size=18),
+    legend.title = element_text(color="black", size=22),
+    legend.text = element_text(color="black", size=20),
+    legend.position = "right",
+     strip.text = element_text(size = 22),
+    axis.title.x = element_text(color="black", size=20),
+    axis.title.y = element_text(color="black", size=20, angle=90),
+    panel.grid.major = element_blank(), # switch off major gridlines
+    panel.grid.minor = element_blank(), # switch off minor gridlines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+E1_E2_adjusted_boxplotALL
+#pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_E2_adjusted_boxplotALL.pdf", height = 8, width = 11)
+E1_E2_adjusted_boxplotALL
+#dev.off()
+E1_E2_adjusted_boxplotALL
+
+
+#overall mean 
+#calculate E1 and E2 mean using adjusted by Percent Protein and Location
+mean(E1_duod_2.5P$adjusted_16S_Copies_per_gram)
+mean(E1_ile_2.5P$adjusted_16S_Copies_per_gram)
+mean(E1_cec_2.5P$adjusted_16S_Copies_per_gram)
+mean(E1_duod_5P$adjusted_16S_Copies_per_gram)
+mean(E1_ile_5P$adjusted_16S_Copies_per_gram)
+mean(E1_cec_5P$adjusted_16S_Copies_per_gram)
+mean(E1_duod_10P$adjusted_16S_Copies_per_gram)
+mean(E1_ile_10P$adjusted_16S_Copies_per_gram)
+mean(E1_cec_10P$adjusted_16S_Copies_per_gram)
+
+mean(E2_duod_2.5P$adjusted_16S_Copies_per_gram)
+mean(E2_ile_2.5P$adjusted_16S_Copies_per_gram)
+mean(E2_cec_2.5P$adjusted_16S_Copies_per_gram)
+mean(E2_duod_5P$adjusted_16S_Copies_per_gram)
+mean(E2_ile_5P$adjusted_16S_Copies_per_gram)
+mean(E2_cec_5P$adjusted_16S_Copies_per_gram)
+mean(E2_duod_10P$adjusted_16S_Copies_per_gram)
+mean(E2_ile_10P$adjusted_16S_Copies_per_gram)
+mean(E2_cec_10P$adjusted_16S_Copies_per_gram)
+
+
+#E1
+# perform an ANOVA to look for differences in adjusted 16S copies per gram values by Location and Percent Protein (***** means very significant)
+adjusted.aov <- aov(adjusted_16S_Copies_per_gram ~ Location + Percent_Protein, data = E1_qPCR)
+summary(adjusted.aov)
+#this shows ile is significantly different by species
+# perform pairwise comparisons using Tukey Honest Significant Differences
+TukeyHSD(adjusted.aov)
+#shows that 1 comparison "green-fito " is just over 0.05 so green alge and fito does not have significantly different isoleucine values. All the other groups are significantly different. 
+
+adjusted.aov <- aov(adjusted_16S_Copies_per_gram ~ Location + Percent_Protein, data = E1_qPCR)
+
+
+
+#E2
+# perform an ANOVA to look for differences in adjusted 16S copies per gram values among Location (***** means very significant)
+adjusted.aov <- aov(adjusted_16S_Copies_per_gram ~ Location + Percent_Protein, data = E2_qPCR)
+summary(adjusted.aov)
+# perform pairwise comparisons using Tukey Honest Significant Differences
+TukeyHSD(adjusted.aov)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+#other random plots that look cool
+```{r}
+E1_raw_box_zoom <- ggplot(E1_E2_qPCR, aes(x=Location, y=raw_16S_Copies_per_gram, fill= Percent_Protein)) + 
+  geom_boxplot()+
+  #geom_col()+
+  facet_zoom(ylim = c(0,150000000000))
+E1_raw_box_zoom
+```
+
+```{r}
+#E1 raw zoom boxplot
+E1_raw_box_zoom <- ggplot(E1_qPCR, aes(x=factor(Location, level=c('Duodenum', 'Ileum', 'Cecum')), y=raw_16S_Copies_per_gram)) + 
+  geom_boxplot()+
+  theme_bw()+
+  DietColors+
+  #geom_col()+
+  facet_zoom(ylim = c(0,125000000000))+
+  labs(title = "Experiment 1 Raw 16S Copies per gram")+
+  theme(
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=14),
+    legend.title = element_text(color="black", size=16),
+    legend.text = element_text(color="black", size=14),
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=16),
+    axis.title.y = element_text(color="black", size=16, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_raw_boxplotZOOM.pdf", height = 8, width = 11)
+E1_raw_box_zoom
+dev.off()
+E1_raw_box_zoom
+```
+
+```{r}
+
+#E2 raw zoom boxplot 
+E2_raw_box_zoom <- ggplot(E2_qPCR, aes(x=factor(Location, level=c('Duodenum', 'Ileum', 'Cecum')), y=raw_16S_Copies_per_gram, fill= Percent_Protein)) + 
+  geom_boxplot()+
+  theme_bw()+
+  DietColors+
+  #geom_col()+
+  facet_zoom(ylim = c(0,130000000000))+
+  labs(title = "Experiment 2 Raw 16S Copies per gram")+
+  theme(
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=14),
+    legend.title = element_text(color="black", size=16),
+    legend.text = element_text(color="black", size=14),
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=16),
+    axis.title.y = element_text(color="black", size=16, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E2_raw_boxplotZOOM.pdf", height = 8, width = 11)
+E2_raw_box_zoom
+dev.off()
+E2_raw_box_zoom
+```
+
+#adj boxplots
+```{r}
+#E1 adjusted zoom boxplot
+E1_adjusted_boxplotBASIC <- ggplot(E1_qPCR, aes(x=factor(Location, level=c('Duodenum', 'Ileum', 'Cecum')), y=adjusted_16S_Copies_per_gram, fill= Percent_Protein)) + 
+  geom_boxplot()+
+  theme_bw()+
+  DietColors+
+  labs(title = "Experiment 1 Adjusted 16S Copies per gram")+
+  theme(
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=14),
+    legend.title = element_text(color="black", size=16),
+    legend.text = element_text(color="black", size=14),
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=16),
+    axis.title.y = element_text(color="black", size=16, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_adjusted_boxplotBASIC.pdf", height = 8, width = 11)
+E1_adjusted_boxplotBASIC
+dev.off()
+E1_adjusted_boxplotBASIC
+```
+
+```{r}
+#E1_E2 adjusted boxplot
+E1_E2_adjusted_boxplotBASIC <- ggplot(E1_E2_qPCR, aes(x=factor(Location, level=c('Duodenum', 'Ileum', 'Cecum')), y=adjusted_16S_Copies_per_gram, fill= Percent_Protein)) + 
+  geom_boxplot()+
+  theme_bw()+
+  DietColors+
+  facet_wrap(~Experiment, 1)
+  labs(title = "Adjusted 16S Copies per gram")+
+  theme(
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=14),
+    legend.title = element_text(color="black", size=16),
+    legend.text = element_text(color="black", size=14),
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=16),
+    axis.title.y = element_text(color="black", size=16, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_E2_adjusted_boxplotBASIC.pdf", height = 8, width = 11)
+E1_E2_adjusted_boxplotBASIC
+dev.off()
+E1_E2_adjusted_boxplotBASIC
+```
+
+```{r}
+
+E1_adjusted_box_zoom <- ggplot(E1_E2_qPCR, aes(x=Location, y=raw_16S_Copies_per_gram, fill= Percent_Protein)) + 
+  geom_boxplot()+
+  #geom_col()+
+  facet_zoom(ylim = c(0,150000000000))
+E1_adjusted_box_zoom
+```
+
+```{r}
+#E1 adjusted zoom boxplot
+E1_adjusted_box_zoom <- ggplot(E1_qPCR, aes(x=factor(Location, level=c('Duodenum', 'Ileum', 'Cecum')), y=adjusted_16S_Copies_per_gram, fill= Percent_Protein)) + 
+  geom_boxplot()+
+  theme_bw()+
+  DietColors+
+  #geom_col()+
+  facet_zoom(ylim = c(0,33000000000))+
+  labs(title = "Experiment 1 Adjusted 16S Copies per gram")+
+  theme(
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=14),
+    legend.title = element_text(color="black", size=16),
+    legend.text = element_text(color="black", size=14),
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=16),
+    axis.title.y = element_text(color="black", size=16, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_adjusted_boxplotZOOM.pdf", height = 8, width = 11)
+E1_adjusted_box_zoom
+dev.off()
+E1_adjusted_box_zoom
+```
+
+```{r}
+#E2 adjusted zoom boxplot 
+E2_adjusted_box_zoom <- ggplot(E2_qPCR, aes(x=factor(Location, level=c('Duodenum', 'Ileum', 'Cecum')), y=adjusted_16S_Copies_per_gram, fill= Percent_Protein)) + 
+  geom_boxplot()+
+  theme_bw()+
+  DietColors+
+  #geom_col()+
+  facet_zoom(ylim = c(0,35000000000))+
+  labs(title = "Experiment 2 adjusted 16S Copies per gram")+
+  theme(
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=14),
+    legend.title = element_text(color="black", size=16),
+    legend.text = element_text(color="black", size=14),
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=16),
+    axis.title.y = element_text(color="black", size=16, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E2_adjusted_boxplotZOOM.pdf", height = 8, width = 11)
+E2_adjusted_box_zoom
+dev.off()
+E2_adjusted_box_zoom
+```
+
+
+```{r}
+#E1_E2 adjusted zoom boxplot 
+E1_E2_adjusted_box_zoom <- ggplot(E1_E2_qPCR, aes(x=factor(Location, level=c('Duodenum', 'Ileum', 'Cecum')), y=adjusted_16S_Copies_per_gram, fill= Location)) + 
+  geom_boxplot()+
+  theme_bw()+
+  LocationColors+
+  #geom_col()+
+  facet_zoom(ylim = c(0,35000000000))+
+  labs(title = "Quantified Bacterial Biomass by Gut Section", x= "Location", y= "Adjusted 16S rRNA Gene Copies per gram")+
+  theme(
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=14),
+    legend.title = element_text(color="black", size=16),
+    legend.text = element_text(color="black", size=14),
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=16),
+    axis.title.y = element_text(color="black", size=16, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_E2_Location_adjusted_boxplotZOOM.pdf", height = 8, width = 11)
+E1_E2_adjusted_box_zoom
+dev.off()
+E1_E2_adjusted_box_zoom
+```
+```{r}
+#E1_E2 adjusted zoom boxplot 
+E1_E2_adjusted_box <- ggplot(E1_E2_qPCR, aes(x=factor(Location, level=c('Duodenum', 'Ileum', 'Cecum')), y=adjusted_16S_Copies_per_gram, fill= Location)) + 
+  geom_boxplot(outlier.colour = NA)+
+  coord_cartesian(ylim = c(0, 200000000000))+
+  theme_bw()+
+  LocationColors+
+  #geom_col()+
+  labs(title = "Bacterial Biomass by Section of Gut", x= "Gut Section", y= "Adjusted 16S rRNA Gene Copies per gram")+
+  theme(
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=14),
+    legend.title = element_text(color="black", size=16),
+    legend.text = element_text(color="black", size=14),
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=16),
+    axis.title.y = element_text(color="black", size=16, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_E2_Location_adjusted_boxplot.pdf", height = 8, width = 11)
+E1_E2_adjusted_box
+dev.off()
+E1_E2_adjusted_box
+```
+
+
+```{r}
+#E1_E2 raw duod boxplot
+E1_E2_raw_duod_boxplot <- ggplot(E1_E2_duod, aes(x=Location, y=raw_16S_Copies_per_gram, fill= Percent_Protein)) + 
+  geom_boxplot()+
+  theme_bw()+
+  DietColors+
+  facet_wrap(~Experiment, 1)
+  labs(title = "Raw 16S Copies per gram")+
+  theme(
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=14),
+    legend.title = element_text(color="black", size=16),
+    legend.text = element_text(color="black", size=14),
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=16),
+    axis.title.y = element_text(color="black", size=16, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_E2_raw_duod_boxplot.pdf", height = 8, width = 11)
+E1_E2_raw_duod_boxplot
+dev.off()
+E1_E2_raw_duod_boxplot
+```
+```{r}
+#E1_E2 raw boxplot
+E1_E2_raw_ile_boxplot <- ggplot(E1_E2_ile, aes(x=Location, y=raw_16S_Copies_per_gram, fill= Percent_Protein)) + 
+  geom_boxplot()+
+  theme_bw()+
+  DietColors+
+  facet_wrap(~Experiment, 1)
+  labs(title = "Raw 16S Copies per gram")+
+  theme(
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=14),
+    legend.title = element_text(color="black", size=16),
+    legend.text = element_text(color="black", size=14),
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=16),
+    axis.title.y = element_text(color="black", size=16, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_E2_raw_ile_boxplot.pdf", height = 8, width = 11)
+E1_E2_raw_ile_boxplot
+dev.off()
+E1_E2_raw_ile_boxplot
+```
+```{r}
+#E1_E2 raw boxplot
+E1_E2_raw_cec_boxplot <- ggplot(E1_E2_cecum, aes(x=Location, y=raw_16S_Copies_per_gram, fill= Percent_Protein)) + 
+  geom_boxplot()+
+  theme_bw()+
+  DietColors+
+  facet_wrap(~Experiment, 1)
+  labs(title = "Raw 16S Copies per gram")+
+  theme(
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=14),
+    legend.title = element_text(color="black", size=16),
+    legend.text = element_text(color="black", size=14),
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=16),
+    axis.title.y = element_text(color="black", size=16, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_E2_raw_cec_boxplot.pdf", height = 8, width = 11)
+E1_E2_raw_cec_boxplot
+dev.off()
+E1_E2_raw_cec_boxplot
+```
+
+#adjusted
+```{r}
+#E1_E2 adjusted boxplot
+E1_E2_adjusted_duod_boxplot <- ggplot(E1_E2_duod, aes(x=Location, y=adjusted_16S_Copies_per_gram, fill= Percent_Protein)) + 
+  geom_boxplot()+
+  theme_bw()+
+  DietColors+
+  facet_wrap(~Experiment, 1)
+  labs(title = "Raw 16S Copies per gram")+
+  theme(
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=14),
+    legend.title = element_text(color="black", size=16),
+    legend.text = element_text(color="black", size=14),
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=16),
+    axis.title.y = element_text(color="black", size=16, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_E2_adjusted_duod_boxplot.pdf", height = 8, width = 11)
+E1_E2_adjusted_duod_boxplot
+dev.off()
+E1_E2_adjusted_duod_boxplot
+```
+
+
+```{r}
+#E1_E2 adjusted boxplot
+E1_E2_adjusted_ile_boxplot <- ggplot(E1_E2_ile, aes(x=Location, y=adjusted_16S_Copies_per_gram, fill= Percent_Protein)) + 
+  geom_boxplot()+
+  theme_bw()+
+  DietColors+
+  facet_wrap(~Experiment, 1)
+  labs(title = "Raw 16S Copies per gram")+
+  theme(
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=14),
+    legend.title = element_text(color="black", size=16),
+    legend.text = element_text(color="black", size=14),
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=16),
+    axis.title.y = element_text(color="black", size=16, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_E2_adjusted_ile_boxplot.pdf", height = 8, width = 11)
+E1_E2_adjusted_ile_boxplot
+dev.off()
+E1_E2_adjusted_ile_boxplot
+```
+
+```{r}
+#E1_E2 adjusted boxplot
+E1_E2_adjusted_cec_boxplot <- ggplot(E1_E2_cecum, aes(x=Location, y=adjusted_16S_Copies_per_gram, fill= Percent_Protein)) + 
+  geom_boxplot()+
+  theme_bw()+
+  DietColors+
+  facet_wrap(~Experiment, 1)
+  labs(title = "Raw 16S Copies per gram")+
+  theme(
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=14),
+    legend.title = element_text(color="black", size=16),
+    legend.text = element_text(color="black", size=14),
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=16),
+    axis.title.y = element_text(color="black", size=16, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_E2_adjusted_cec_boxplot.pdf", height = 8, width = 11)
+E1_E2_adjusted_cec_boxplot
+dev.off()
+E1_E2_adjusted_cec_boxplot
+```
+
+#reorder based on median
+```{r}
+
+p <- ggplot(E1_E2_cecum, aes(x = fct_reorder(Percent_Protein, adjusted_16S_Copies_per_gram, .fun = median, .desc =TRUE), y = adjusted_16S_Copies_per_gram)) + 
+        geom_boxplot(aes(fill = fct_reorder(Percent_Protein, adjusted_16S_Copies_per_gram, .fun = median, .desc =TRUE))) + 
+        DietColors+
+        geom_jitter(position=position_jitter(0.2)) +
+        theme_bw(base_size = 14) +
+        xlab("Percent_Protein") +
+        ylab("adjusted_16S_Copies_per_gram")       
+p  
+
+
+E1_E2_adjusted_cec_boxplot_MEDI <- ggplot(E1_E2_cecum, aes(x = fct_reorder(Percent_Protein, adjusted_16S_Copies_per_gram, .fun = median, .desc =TRUE), y = adjusted_16S_Copies_per_gram)) + 
+  geom_boxplot(aes(fill = fct_reorder(Percent_Protein, adjusted_16S_Copies_per_gram, .fun = median, .desc =TRUE)))+
+  theme_bw()+
+  DietColors+
+  facet_wrap(~Experiment, 1)
+  labs(title = "CECUM Raw 16S Copies per gram")+
+  theme(
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=14),
+    legend.title = element_text(color="black", size=16),
+    legend.text = element_text(color="black", size=14),
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=16),
+    axis.title.y = element_text(color="black", size=16, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_E2_adjusted_cec_boxplot_MEDI.pdf", height = 8, width = 11)
+E1_E2_adjusted_cec_boxplot_MEDI
+dev.off()
+E1_E2_adjusted_cec_boxplot_MEDI
+
+
+
+```
+
+```{r}
+Percent_Protein <- mutate(E1_E2_cecum,Percent_Protein = fct_relevel(Percent_Protein, 
+            "2.5P", "5P", "10P"))
+E1_E2_adjusted_cec_boxplot <- ggplot(E1_E2_cecum, aes(x=Location, y=adjusted_16S_Copies_per_gram, fill= Percent_Protein)) + 
+  geom_boxplot()+
+  theme_bw()+
+  DietColors+
+  facet_wrap(~Experiment, 1)+
+  labs(title = "Raw 16S Copies per gram")+
+  theme(
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=14),
+    legend.title = element_text(color="black", size=16),
+    legend.text = element_text(color="black", size=14),
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=16),
+    axis.title.y = element_text(color="black", size=16, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+pdf("//Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Methods/qPCR data/plots/E1_E2_adjusted_cec_boxplot.pdf", height = 8, width = 11)
+E1_E2_adjusted_cec_boxplot
+dev.off()
+E1_E2_adjusted_cec_boxplot
+```
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
