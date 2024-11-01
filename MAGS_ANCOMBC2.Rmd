@@ -1,0 +1,698 @@
+---
+title: "MAGS_ANCOMBC2"
+author: "Conner Mertz"
+date: "2024-03-07"
+output: html_document
+---
+
+Script for differential abundance analyses identifying bacterial families associated with different diets and protein treatments in Metagenomic-assembled microbial genomes from the cecal contents of mice using ANCOM-BC2.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE, comment = NA, 
+                      fig.width = 6.25, fig.height = 5)
+library(ANCOMBC)
+library(tidyverse)
+library(caret)
+library(DT)
+options(DT.options = list(
+  initComplete = JS("function(settings, json) {",
+  "$(this.api().table().header()).css({'background-color': 
+  '#000', 'color': '#fff'});","}")))
+
+# It appears to be a package compatibility issue between the release version of 
+# phyloseq and lme4, a fresh installation of phyloseq might be needed
+# See this post: https://github.com/lme4/lme4/issues/743
+# remotes::install_github("joey711/phyloseq", force = TRUE)
+```
+
+ANCOM
+Analysis of Compositions of Microbiomes with Bias Correction (ANCOM-BC) (Lin and Peddada 2020) is a methodology of differential abundance (DA) analysis for microbial absolute abundances. ANCOM-BC estimates the unknown sampling fractions, corrects the bias induced by their differences through a log linear regression model including the estimated sampling fraction as an offset terms, and identifies taxa that are differentially abundant according to the variable of interest. For more details, please refer to the ANCOM-BC paper.
+official tutorial: https://bioconductor.org/packages/release/bioc/vignettes/ANCOMBC/inst/doc/ANCOMBC2.html
+
+https://bioconductor.org/packages/devel/bioc/vignettes/ANCOMBC/inst/doc/ANCOMBC.html
+
+a helpful tutorial: https://www.yanh.org/2021/01/01/microbiome-r/#differential-abundance-analysis
+
+ANCOM manual: https://bioconductor.org/packages/release/bioc/manuals/ANCOMBC/man/ANCOMBC.pdf
+
+
+#LOAD OTHER PACKAGES THAT MIGHT BE USEFUL
+```{r}
+#load packages
+# = this package is definitely needed
+library(BiocManager)
+library(phyloseq) #
+library(ggplot2) #
+library(randomForest)
+library(vegan)
+library(caret)
+library(gridExtra) #
+library(ggpubr) 
+library(ggthemes) #
+library(vegan) #
+library(MASS)
+library(cluster)
+library(RColorBrewer) #
+library(grid)
+library(cooccur)
+library(igraph)
+library(Hmisc)
+#library(minerva)
+library(parallel)
+library(corrplot)
+library(tidyverse) #
+library(plyr);library(dplyr) #
+library(tidyr) #
+library(usdm) #
+library(decontam) #
+library(ecodist) #
+library(betapart) #
+#library(psych)
+#library(ggbiplot)
+library(ANCOMBC) #
+library(DT) #
+library(gplots) #
+library(remotes)
+library(metagMisc)
+library(iNEXT)
+library("DESeq2")
+packageVersion("DESeq2")
+library("reshape2")
+library("remotes")
+library("phyloseq.extended")
+#library(ggvegan) 
+#library(ggpubfigs)
+#library(agricolae) #this package is not compatable with this version of R, if we really need it we will need to install new version of package
+library(RColorBrewer)
+library(scales)
+library("devtools")
+
+theme_set(theme_bw()) #sets ggplot theme
+```
+
+```{r}
+#read in your ps RDS
+#read in un-normalized- unrarefied phyloseq object from rds (ANCOM normalizes for you, and if you give it normalized data it will give bias)
+ps_raw <- readRDS("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/Metagenomic_final_ps.rds")
+#READ IN META
+Meta <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/META_metagenomic samples E1_E2.csv", header=T, row.names='Sample_ID')
+str(Meta)
+```
+
+
+```{r}
+#make relevant subsets
+ps_raw_E1_E2_forcomparison <- ps_raw
+
+### Make new phyloseq object of just E1, no duplicates
+E1_ps_raw <- subset_samples(ps_raw, Experiment=="E1")
+
+### Make new phyloseq object of just E2, no duplicates
+E2_ps_raw <- subset_samples(ps_raw, Experiment=="E2")   
+
+```
+
+#ANCOMBC2 E1 vs E2 by diet for all samples
+
+```{r}
+output = ancombc2(
+  ps_raw_E1_E2_forcomparison,
+  assay_name = NULL,
+  tax_level = "family",
+  fix_formula= "Exp_Diet",
+  rand_formula = NULL,
+  p_adj_method = "holm",
+  prv_cut = 0.1,
+  lib_cut = 0,
+  s0_perc = 0.05,
+  group = "Exp_Diet", #leave as null if group variable of interest contains only two categories 
+  struc_zero = FALSE,
+  neg_lb = FALSE,
+  alpha = 0.05,
+  n_cl = 1,
+  verbose = FALSE,
+  global = TRUE,
+  pairwise = TRUE,
+  dunnet = TRUE,
+  trend = FALSE,
+  iter_control = list(tol = 0.01, max_iter = 20, verbose = FALSE),
+  em_control = list(tol = 1e-05, max_iter = 100),
+  lme_control = lme4::lmerControl(),
+  mdfdr_control = list(fwer_ctrl_method = "holm", B = 100),
+  trend_control = list(contrast = NULL, node = NULL, solver = "ECOS", B = 100)
+)
+
+#this software has undergone some updates. I got an unused argument error. The error messages are a result of differences in the arguments between version 1.x.x and 2.x.x of the software. To identify the correct arguments for your current version of ANCOMBC, you can run ?ancombc2 in your R console to access the documentation.
+
+```
+
+
+Save the output
+```{r}
+#The primary output of the ANCOM-BC2 methodology (res) identifies taxa with differential abundance based on the chosen covariate. The results include: 1) log fold changes, 2) standard errors, 3) test statistics, 4) p-values, 5) adjusted p-values, 6) indicators denoting whether the taxon is differentially abundant (TRUE) or not (FALSE), and 7) indicators denoting whether the taxon passed the sensitivity analysis (TRUE) or not (FALSE).
+
+res_prim = output$res
+saveRDS(res_prim, "/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/output/E1vsE2_PROTEIN_res_prim.rds")
+#read in the ANCOMBC output if you want to see E1 vs E2 by PROTEIN
+E1vsE2_PROTEIN_res_prim <- readRDS("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/output/E1vsE2_PROTEIN_res_prim.rds")
+
+res_pair = output$res_pair
+saveRDS(res_pair, "/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/output/E1vsE2_PROTEIN_res_pair.rds")
+E1vsE2_PROTEIN_res_pair <- readRDS("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/output/E1vsE2_PROTEIN_res_pair.rds")
+res_pair
+
+res_trend = output$res_trend
+saveRDS(res_trend, "/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/output/E1vsE2_PROTEIN_res_trend.rds")
+E1vsE2_PROTEIN_res_trend <- readRDS("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/output/E1vsE2_PROTEIN_res_trend.rds")
+```
+
+
+ANCOM-BC2 primary analysis
+```{r}
+E1vsE2_PROTEIN_res_prim
+```
+
+
+##ANCOM-BC2 pairwise directional test
+ANCOM-BC2 pairwise directional test aims to determine taxa that are differentially abundant between any pair of two groups across three or more experimental groups, while controlling the mdFDR.
+
+In this example, we want to identify taxa that are differentially abundant between any pair of two groups across “lean”, “overweight”, and “obese”. The result contains: 1) log fold changes, 2) standard errors, 3) test statistics, 4) p-values, 5) adjusted p-values, 6) indicators of whether the taxon is differentially abundant (TRUE) or not (FALSE).
+```{r}
+E1vsE2_PROTEIN_res_pair
+write.csv(E1vsE2_PROTEIN_res_pair, "/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/output/E1vsE2_PROTEIN_res_pair_edit.csv")
+
+#read in your res_pair csv: 
+E1vsE2_PROTEIN_res_pair2 <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/output/E1vsE2_PROTEIN_res_pair_edit.csv")
+#change name so target_ids match on both files
+names(E1vsE2_PROTEIN_res_pair2)[2] ="taxon" 
+
+#read in your Taxonomy classification file 
+Taxonomy_classification <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/output/METAGENOMIC_TAXONOMY_classification.csv") #if this doesn't load be sure to dowload the file from the cloud, then it will work
+#change name so target_ids match on both files
+names(Taxonomy_classification)[1] ="taxon"
+
+#now we need to get our gapmind results and join it with our Taxonomy results from CAT (combining two data frames)
+#we only want to keep the genes that showed up with gapmind, we don't need the other genes that showed up
+Part_1 <- Taxonomy_classification %>% 
+  inner_join (E1vsE2_PROTEIN_res_pair2, by = "taxon")
+
+write.csv(Part_1,"/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/output/E1vsE2_PROTEIN_res_pair_AND_Taxonomy.csv") # went in here and edited file to my liking
+```
+
+#pairewise heatmap of E1 vs E2 by percent protein
+```{r}
+#Plot ANCOM-BC2 pairwise directional test
+df_fig_pair = E1vsE2_PROTEIN_res_pair %>%
+    filter(diff_Exp_DietE1_2.5P == 1 | 
+             diff_Exp_DietE1_5P == 1 |
+             diff_Exp_DietE2_10P == 1 |
+             diff_Exp_DietE2_2.5P == 1 |
+             diff_Exp_DietE2_5P == 1 |
+             diff_Exp_DietE1_5P_Exp_DietE1_2.5P == 1 |
+             diff_Exp_DietE2_10P_Exp_DietE1_2.5P == 1 |
+             diff_Exp_DietE2_2.5P_Exp_DietE1_2.5P == 1 |
+             diff_Exp_DietE2_5P_Exp_DietE1_2.5P == 1 |
+             diff_Exp_DietE2_10P_Exp_DietE1_5P == 1 |
+             diff_Exp_DietE2_2.5P_Exp_DietE1_5P == 1 |
+             diff_Exp_DietE2_5P_Exp_DietE1_5P == 1 |
+             diff_Exp_DietE2_2.5P_Exp_DietE2_10P == 1 |
+             diff_Exp_DietE2_5P_Exp_DietE2_10P == 1 |
+             diff_Exp_DietE2_5P_Exp_DietE2_2.5P == 1) %>%
+    mutate(lfc_E1_2.5P = ifelse(diff_Exp_DietE1_2.5P == 1, 
+                             lfc_Exp_DietE1_2.5P, 0),
+           lfc_E1_5P = ifelse(diff_Exp_DietE1_5P == 1, 
+                                   lfc_Exp_DietE1_5P, 0),
+           lfc_E2_10P = ifelse(diff_Exp_DietE2_10P == 1, 
+                                   lfc_Exp_DietE2_10P, 0),
+           lfc_E2_2.5P = ifelse(diff_Exp_DietE2_2.5P == 1, 
+                                   lfc_Exp_DietE2_2.5P, 0),
+           lfc_E2_5P = ifelse(diff_Exp_DietE2_5P == 1, 
+                                   lfc_Exp_DietE2_5P, 0),
+           lfc_E1_5P_E1_2.5P = ifelse(diff_Exp_DietE1_5P_Exp_DietE1_2.5P == 1, 
+                                   lfc_Exp_DietE1_5P_Exp_DietE1_2.5P, 0),
+           lfc_E2_10P_E1_2.5P = ifelse(diff_Exp_DietE2_10P_Exp_DietE1_2.5P == 1, 
+                                   lfc_Exp_DietE2_10P_Exp_DietE1_2.5P, 0),
+           lfc_E2_2.5P_E1_2.5P = ifelse(diff_Exp_DietE2_2.5P_Exp_DietE1_2.5P == 1, 
+                                   lfc_Exp_DietE2_2.5P_Exp_DietE1_2.5P, 0),
+           lfc_E2_5P_E1_2.5P = ifelse(diff_Exp_DietE2_5P_Exp_DietE1_2.5P == 1, 
+                                   lfc_Exp_DietE2_5P_Exp_DietE1_2.5P, 0),
+           lfc_E2_10P_E1_5P = ifelse(diff_Exp_DietE2_10P_Exp_DietE1_5P == 1, 
+                                   lfc_Exp_DietE2_10P_Exp_DietE1_5P, 0),
+           lfc_E2_2.5P_E1_5P = ifelse(diff_Exp_DietE2_2.5P_Exp_DietE1_5P == 1, 
+                                   lfc_Exp_DietE2_2.5P_Exp_DietE1_5P, 0),
+           lfc_E2_5P_E1_5P = ifelse(diff_Exp_DietE2_5P_Exp_DietE1_5P == 1, 
+                                   lfc_Exp_DietE2_5P_Exp_DietE1_5P, 0),
+           lfc_E2_2.5P_E2_10P = ifelse(diff_Exp_DietE2_2.5P_Exp_DietE2_10P == 1, 
+                                   lfc_Exp_DietE2_2.5P_Exp_DietE2_10P, 0),
+           lfc_E2_5P_E2_10P = ifelse(diff_Exp_DietE2_5P_Exp_DietE2_10P == 1, 
+                                   lfc_Exp_DietE2_5P_Exp_DietE2_10P, 0),
+           lfc_E2_5P_E2_2.5P = ifelse(diff_Exp_DietE2_5P_Exp_DietE2_2.5P == 1, 
+                                        lfc_Exp_DietE2_5P_Exp_DietE2_2.5P, 0)) %>%
+    transmute(taxon, 
+              `E1_2.5P vs. E1_10P` = round(lfc_E1_2.5P, 2), 
+              `E1_5P vs. E1_10P` = round(lfc_E1_5P, 2),
+              `E2_10P vs. E1_10P` = round(lfc_E2_10P, 2),
+              `E2_2.5P vs. E1_10P` = round(lfc_E2_2.5P, 2),
+              `E2_5P vs. E1_10P` = round(lfc_E2_5P, 2),
+              `E1_5P vs. E1_2.5P` = round(lfc_E1_5P_E1_2.5P, 2),
+              `E2_10P vs. E1_2.5P` = round(lfc_E2_10P_E1_2.5P, 2),
+              `E2_2.5P vs. E1_2.5P` = round(lfc_E2_2.5P_E1_2.5P, 2),
+              `E2_5P vs. E1_2.5P` = round(lfc_E2_5P_E1_2.5P, 2),
+              `E2_10P vs. E1_5P` = round(lfc_E2_10P_E1_5P, 2),
+              `E2_2.5P vs. E1_5P` = round(lfc_E2_2.5P_E1_5P, 2),
+              `E2_5P vs. E1_5P` = round(lfc_E2_5P_E1_5P, 2),
+              `E2_2.5P vs. E2_10P` = round(lfc_E2_2.5P_E2_10P, 2),
+              `E2_5P vs. E2_10P` = round(lfc_E2_5P_E2_10P, 2),
+              `E2_5P vs. E2_2.5P` = round(lfc_E2_5P_E2_2.5P, 2)
+              ) %>%
+    pivot_longer(cols = `E1_2.5P vs. E1_10P`:`E2_5P vs. E2_2.5P`, 
+                 names_to = "group", values_to = "value") %>%
+    arrange(taxon)
+df_fig_pair$group = factor(df_fig_pair$group, 
+                           levels = c("E1_2.5P vs. E1_10P",
+                                      "E1_5P vs. E1_10P",
+                                      "E2_10P vs. E1_10P",
+                                      "E2_2.5P vs. E1_10P",
+                                      "E2_5P vs. E1_10P",
+                                      "E1_5P vs. E1_2.5P",
+                                      "E2_10P vs. E1_2.5P",
+                                      "E2_2.5P vs. E1_2.5P",
+                                      "E2_5P vs. E1_2.5P",
+                                      "E2_10P vs. E1_5P",
+                                      "E2_2.5P vs. E1_5P",
+                                      "E2_5P vs. E1_5P",
+                                      "E2_2.5P vs. E2_10P",
+                                      "E2_5P vs. E2_10P",
+                                      "E2_5P vs. E2_2.5P"))
+  
+lo = floor(min(df_fig_pair$value))
+up = ceiling(max(df_fig_pair$value))
+mid = (lo + up)/2
+fig_pair = df_fig_pair %>%
+  ggplot(aes(x = group, y = taxon, fill = value)) + 
+  geom_tile(color = "black") +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       na.value = "white", midpoint = mid, limit = c(lo, up),
+                       name = NULL) +
+  geom_text(aes(group, taxon, label = value), color = "black", size = 4) +
+  labs(x = NULL, y = NULL, title = "Log fold change of pairwise comparisons in E1 vs E2 by % Protein") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 1),
+    title =element_text(size=22, face='bold'),
+    axis.text.x = element_text(color="black", size=12, angle = 90, hjust = 1),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text.y = element_text(color="black", size=12, angle=90),
+    #legend.title = element_text(color="black", size=20),
+    legend.text = element_text(color="black", size=14),
+    legend.key.size = unit(1, 'cm'),
+    #legend.position = "right",
+    strip.text = element_text(size = 16),
+    axis.title.x = element_text(color="black", size=14),
+    axis.title.y = element_text(color="black", size=14, angle=90),
+    panel.grid.major = element_blank(), # switch off major gridlines
+    panel.grid.minor = element_blank(), # switch off minor gridlines
+  )
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/plots/E1vsE2_Protein_LFC_Pairwise.pdf", height = 12, width = 14)
+fig_pair
+dev.off()
+```
+
+#E1_E2_PROTEIN
+ANCOMBC2
+pairwise comparisons by experiment and PROTEIN
+```{r}
+#create your data frame for log fold change of pairwise comparisons for dot plot! We will use this to graph dot plots of bargraphs
+df_res_pair = E1vsE2_PROTEIN_res_pair %>%
+  dplyr::filter(diff_Exp_DietE1_2.5P == 1) %>%
+  mutate(lfc_E1_2.5P = ifelse(diff_Exp_DietE1_2.5P == 1, 
+                             lfc_Exp_DietE1_2.5P, 0)) %>%
+              transmute(taxon,
+              lfc = lfc_E1_2.5P,
+              se = se_Exp_DietE1_2.5P,
+              p_val= p_Exp_DietE1_2.5P,
+              group = "E1_2.5P - E1_10P") %>%
+              
+  bind_rows(
+  E1vsE2_PROTEIN_res_pair %>%
+  dplyr::filter(diff_Exp_DietE1_5P == 1) %>%
+  mutate(lfc_E1_5P = ifelse(diff_Exp_DietE1_5P == 1, 
+                             lfc_Exp_DietE1_5P, 0)) %>%
+            transmute(taxon,
+                      lfc = lfc_E1_5P,
+                      se = se_Exp_DietE1_5P,
+                      p_val = p_Exp_DietE1_5P,
+                      group = "E1_5P - E1_10P")
+  ) %>%
+    bind_rows(
+    E1vsE2_PROTEIN_res_pair %>%
+    dplyr::filter(diff_Exp_DietE2_10P == 1) %>%
+    mutate(lfc_E2_10P = ifelse(diff_Exp_DietE2_10P == 1, 
+                                   lfc_Exp_DietE2_10P, 0)) %>%
+            transmute(taxon,
+                      lfc = lfc_E2_10P,
+                      se = se_Exp_DietE2_10P,
+                      p_val= p_Exp_DietE2_10P,
+                      group = "E2_10P - E1_10P")
+    ) %>%
+   bind_rows(
+    E1vsE2_PROTEIN_res_pair %>%
+    dplyr::filter(diff_Exp_DietE2_2.5P == 1) %>%
+    mutate(lfc_E2_2.5P = ifelse(diff_Exp_DietE2_2.5P == 1, 
+                                   lfc_Exp_DietE2_2.5P, 0)) %>%
+                    transmute(taxon,
+                      lfc = lfc_E2_2.5P,
+                      se = se_Exp_DietE2_2.5P,
+                      p_val = p_Exp_DietE2_2.5P,
+                      group = "E2_2.5P - E1_10P")
+    ) %>%  
+   bind_rows(
+    E1vsE2_PROTEIN_res_pair %>%
+    dplyr::filter(diff_Exp_DietE2_5P == 1) %>%
+    mutate(lfc_E2_5P = ifelse(diff_Exp_DietE2_5P == 1, 
+                                   lfc_Exp_DietE2_5P, 0)) %>%  
+                    transmute(taxon,
+                      lfc = lfc_E2_5P,
+                      se = se_Exp_DietE2_5P,
+                      p_val = p_Exp_DietE2_5P,
+                      group = "E2_5P - E1_10P") 
+    ) %>%                 
+    bind_rows(
+    E1vsE2_PROTEIN_res_pair %>%
+    dplyr::filter(diff_Exp_DietE1_5P_Exp_DietE1_2.5P == 1) %>%
+    mutate(lfc_E1_5P_E1_2.5P = ifelse(diff_Exp_DietE1_5P_Exp_DietE1_2.5P == 1, 
+                                   lfc_Exp_DietE1_5P_Exp_DietE1_2.5P, 0)) %>%
+                    transmute(taxon,
+                      lfc = lfc_E1_5P_E1_2.5P,
+                      se = se_Exp_DietE1_5P_Exp_DietE1_2.5P,
+                      p_val = p_Exp_DietE1_5P_Exp_DietE1_2.5P,
+                      group = "E1_5P - E1_2.5P")
+    ) %>%              
+    bind_rows(
+    E1vsE2_PROTEIN_res_pair %>%
+    dplyr::filter(diff_Exp_DietE2_10P_Exp_DietE1_2.5P == 1) %>%
+    mutate(lfc_E2_10P_E1_2.5P = ifelse(diff_Exp_DietE2_10P_Exp_DietE1_2.5P == 1, 
+                                   lfc_Exp_DietE2_10P_Exp_DietE1_2.5P, 0)) %>%
+                    transmute(taxon,
+                      lfc = lfc_E2_10P_E1_2.5P,
+                      se = se_Exp_DietE2_10P_Exp_DietE1_2.5P,
+                      p_val = p_Exp_DietE2_10P_Exp_DietE1_2.5P,
+                      group = "E2_10P - E1_2.5P") 
+    ) %>%              
+    bind_rows(
+    E1vsE2_PROTEIN_res_pair %>%
+    dplyr::filter(diff_Exp_DietE2_2.5P_Exp_DietE1_2.5P == 1) %>%
+    mutate(lfc_E2_2.5P_E1_2.5P = ifelse(diff_Exp_DietE2_2.5P_Exp_DietE1_2.5P == 1, 
+                                   lfc_Exp_DietE2_2.5P_Exp_DietE1_2.5P, 0)) %>%
+                    transmute(taxon,
+                      lfc = lfc_E2_2.5P_E1_2.5P,
+                      se = se_Exp_DietE2_2.5P_Exp_DietE1_2.5P,
+                      p_val = p_Exp_DietE2_2.5P_Exp_DietE1_2.5P,
+                      group = "E2_2.5P - E1_2.5P")
+    ) %>%
+    bind_rows(
+    E1vsE2_PROTEIN_res_pair %>%
+    dplyr::filter(diff_Exp_DietE2_5P_Exp_DietE1_2.5P == 1) %>%
+    mutate(lfc_E2_5P_E1_2.5P = ifelse(diff_Exp_DietE2_5P_Exp_DietE1_2.5P == 1, 
+                                   lfc_Exp_DietE2_5P_Exp_DietE1_2.5P, 0)) %>%
+                    transmute(taxon,
+                      lfc = lfc_E2_5P_E1_2.5P,
+                      se = se_Exp_DietE2_5P_Exp_DietE1_2.5P,
+                      p_val = p_Exp_DietE2_5P_Exp_DietE1_2.5P,
+                      group = "E2_5P - E1_2.5P")
+    ) %>%
+    bind_rows(
+    E1vsE2_PROTEIN_res_pair %>%
+    dplyr::filter(diff_Exp_DietE2_10P_Exp_DietE1_5P == 1) %>%
+    mutate(lfc_E2_10P_E1_5P = ifelse(diff_Exp_DietE2_10P_Exp_DietE1_5P == 1, 
+                                   lfc_Exp_DietE2_10P_Exp_DietE1_5P, 0)) %>%
+                transmute(taxon,
+                      lfc = lfc_E2_10P_E1_5P,
+                      se = se_Exp_DietE2_10P_Exp_DietE1_5P,
+                      p_val = p_Exp_DietE2_10P_Exp_DietE1_5P,
+                      group = "E2_10P - E1_5P")
+    ) %>%
+ bind_rows(
+    E1vsE2_PROTEIN_res_pair %>%
+    dplyr::filter(diff_Exp_DietE2_2.5P_Exp_DietE1_5P == 1) %>%
+    mutate(lfc_E2_2.5P_E1_5P = ifelse(diff_Exp_DietE2_2.5P_Exp_DietE1_5P == 1, 
+                                   lfc_Exp_DietE2_2.5P_Exp_DietE1_5P, 0)) %>% 
+                    transmute(taxon,
+                      lfc = lfc_E2_2.5P_E1_5P,
+                      se = se_Exp_DietE2_2.5P_Exp_DietE1_5P,
+                      p_val = p_Exp_DietE2_2.5P_Exp_DietE1_5P,
+                      group = "E2_2.5P - E1_5P")
+    ) %>%
+bind_rows(
+    E1vsE2_PROTEIN_res_pair %>%
+    dplyr::filter(diff_Exp_DietE2_5P_Exp_DietE1_5P == 1) %>%
+    mutate(lfc_E2_5P_E1_5P = ifelse(diff_Exp_DietE2_5P_Exp_DietE1_5P == 1, 
+                                   lfc_Exp_DietE2_5P_Exp_DietE1_5P, 0)) %>% 
+                    transmute(taxon,
+                      lfc = lfc_E2_5P_E1_5P,
+                      se = se_Exp_DietE2_5P_Exp_DietE1_5P,
+                      p_val = p_Exp_DietE2_5P_Exp_DietE1_5P,
+                      group = "E2_5P - E1_5P")
+    ) %>%    
+bind_rows(
+    E1vsE2_PROTEIN_res_pair %>%
+    dplyr::filter(diff_Exp_DietE2_2.5P_Exp_DietE2_10P == 1) %>%
+    mutate(lfc_E2_2.5P_E2_10P = ifelse(diff_Exp_DietE2_2.5P_Exp_DietE2_10P == 1, 
+                                   lfc_Exp_DietE2_2.5P_Exp_DietE2_10P, 0)) %>% 
+                    transmute(taxon,
+                      lfc = lfc_E2_2.5P_E2_10P,
+                      se = se_Exp_DietE2_2.5P_Exp_DietE2_10P,
+                      p_val= p_Exp_DietE2_2.5P_Exp_DietE2_10P,
+                      group = "E2_2.5P - E2_10P")
+) %>%
+bind_rows(
+    E1vsE2_PROTEIN_res_pair %>%
+    dplyr::filter(diff_Exp_DietE2_5P_Exp_DietE2_10P == 1) %>%
+    mutate(lfc_E2_5P_E2_10P = ifelse(diff_Exp_DietE2_5P_Exp_DietE2_10P == 1, 
+                                   lfc_Exp_DietE2_5P_Exp_DietE2_10P, 0)) %>%
+                    transmute(taxon,
+                      lfc = lfc_E2_5P_E2_10P,
+                      se = se_Exp_DietE2_5P_Exp_DietE2_10P,
+                      p_val = p_Exp_DietE2_5P_Exp_DietE2_10P,
+                      group = "E2_5P - E2_10P")
+    ) %>%  
+bind_rows(
+    E1vsE2_PROTEIN_res_pair %>%
+    dplyr::filter(diff_Exp_DietE2_5P_Exp_DietE2_2.5P == 1) %>%
+    mutate(lfc_E2_5P_E2_2.5P = ifelse(diff_Exp_DietE2_5P_Exp_DietE2_2.5P == 1, 
+                                        lfc_Exp_DietE2_5P_Exp_DietE2_2.5P, 0)) %>%
+                    transmute(taxon,
+                      lfc = lfc_E2_5P_E2_2.5P,
+                      se = se_Exp_DietE2_5P_Exp_DietE2_2.5P,
+                      p_val = p_Exp_DietE2_5P_Exp_DietE2_2.5P,
+                      group = "E2_5P - E2_2.5P")
+    )
+      df_res_pair$group = factor(df_res_pair$group, 
+                            levels = c("E1_2.5P - E1_10P",
+                                      "E1_5P - E1_10P",
+                                      "E2_10P - E1_10P",
+                                      "E2_2.5P - E1_10P",
+                                      "E2_5P - E1_10P",
+                                      "E1_5P - E1_2.5P",
+                                      "E2_10P - E1_2.5P",
+                                      "E2_2.5P - E1_2.5P",
+                                      "E2_5P - E1_2.5P",
+                                      "E2_10P - E1_5P",
+                                      "E2_2.5P - E1_5P",
+                                      "E2_5P - E1_5P",
+                                      "E2_2.5P - E2_10P",
+                                      "E2_5P - E2_10P",
+                                      "E2_5P - E2_2.5P"))
+
+
+```
+
+Save the df you created
+```{r}
+write.csv(df_res_pair, "/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/output/E1vsE2_PROTEIN_df_res_pair.csv") #ADD IN OTHER CATEGORIES YOU WANT TO GRAPH 
+
+#read in your EDITED DF csv: 
+E1vsE2_PROTEIN_df_res_pair <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/output/E1vsE2_PROTEIN_df_res_pair.csv")
+#change name so target_ids match on both files
+names(E1vsE2_PROTEIN_df_res_pair)[2] ="taxon" 
+
+#match to taxonomy
+Taxonomy_classification <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/output/METAGENOMIC_TAXONOMY_classification.csv") #if this doesn't load be sure to dowload the file from the cloud, then it will work
+#change name so target_ids match on both files
+names(Taxonomy_classification)[1] ="taxon"
+
+#now we need to get our DF results and join it with our Taxonomy results from CAT (combining two data frames)
+#we only want to keep the genes that showed up with gapmind, we don't need the other genes that showed up
+Part_DF <- Taxonomy_classification %>% 
+  inner_join (E1vsE2_PROTEIN_df_res_pair, by = "taxon")
+
+write.csv(Part_DF,"/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/output/E1vsE2_PROTEIN_DF_RES_PAIR_AND_Taxonomy.csv") # went in here and edited file to my liking. I saved the new version as edit_E1vsE2_PROTEIN_DF_RES_PAIR_AND_Taxonomy.csv. That is what I will be using for the figures. I basically switched the signs for the differential abundant taxa to be positive for E1 and negative for E2 but consistent with whatever category it was being compared to. 
+
+```
+
+
+Just keep it simple 
+#trying to compare just by experiment and location so:
+#E1_2.5P vs E2_2.5P
+#E1_5P vs E2_5P
+#E1_10P vs E2_10P
+
+#read in the edited df
+```{r}
+E1vsE2_Protein_df <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/output/E1vsE2_PROTEIN_DF_RES_PAIR_AND_Taxonomy.csv")
+```
+
+#filter out to just include: 
+#E1_2.5P vs E2_2.5P
+#E1_5P vs E2_5P
+#E1_10P vs E2_10P
+
+AND
+
+#filter to keep comparisons of interest and mutate so that percent p and ASV's are in the correct order
+
+```{r}
+E1vsE2_PROTEIN_df1 <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/output/edit_E1vsE2_PROTEIN_DF_RES_PAIR_AND_Taxonomy.csv") %>%
+  filter(group_in_E1vsE2_order ==  "E1_2.5PvsE2_2.5P" |
+           group_in_E1vsE2_order ==  "E1_5PvsE2_5P" |
+           group_in_E1vsE2_order ==  "E1_10PvsE2_10P" )%>%
+ mutate(Differentially_Abundant_Group = factor(Differentially_Abundant_Group, levels = c("E1_2.5P","E1_5P", "E1_10P", "E2_2.5P", "E2_5P", "E2_10P"))) %>%
+ mutate(Differentially_Abundant_Protein = factor(Differentially_Abundant_Protein, levels = c("2.5P","5P", "10P"))) %>%
+ mutate(taxon = factor(family, levels = c("Bacteroidaceae", "Porphyromonadaceae", "Tannerellaceae", "Desulfovibrionaceae")))
+
+#save df
+write.csv(E1vsE2_PROTEIN_df1,"/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/output/E1vsE2_Protein_only.csv")
+
+```
+
+Change for Low, Med, High Protein Diet
+```{r}
+#first you want to factor your items. These are the names of the Location in the order I want them to be every time. 
+E1vsE2_PROTEIN_df1$Differentially_Abundant_Protein <-factor(E1vsE2_PROTEIN_df1$Differentially_Abundant_Protein, levels = c("2.5P","5P", "10P"))
+
+#now create an object that is a list of colors in a certain order.The colors I chose are "color-blind friendly":
+Protein_Scale <- c("#cb146e", "#f7ce45","#1983fc")
+#scales::show_col(DietScale)
+
+#now we want to merge the two. We are taking the order from the locations and telling it that it needs to match the order from the cbPalette.
+names(Protein_Scale) <- levels(E1vsE2_PROTEIN_df1$Differentially_Protein)
+#Have you ever used the scale_colour_manual command? Now we can combine that command and all of the stuff we want in it into a new object, LocationColors. At the end of your ggplot code, just add a +DietColor (or whatever you decide to name it), and it should pull the colors you made! 
+ProteinColors<- scale_colour_manual(name="Protein", values= Protein_Scale)
+```
+
+Plot it!
+```{r}
+fig_trend = E1vsE2_PROTEIN_df1 %>% 
+  ggplot(aes(x = lfc_E1vsE2, y = taxon, color = Differentially_Abundant_Protein)) + 
+  geom_point(size = 4, position = position_dodge()) +
+  geom_errorbar(
+    aes(xmin = lfc_E1vsE2 - se, xmax = lfc_E1vsE2 + se), 
+    width = .2) +
+  geom_vline(aes(xintercept = 0), linetype = "dashed")+
+  #facet_wrap(~Differentially_Abundant_Location) +
+  labs(x = "Log Fold Change", y = "family", title = "Differentially Abundant Taxa\n by Diet Treatment ") +
+  ProteinColors +
+  scale_x_continuous(limits=c(-7, 7)) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12, angle = 90),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text = element_text(size=6),
+    strip.text.y = element_text(color="black", size=12, angle=90),
+    legend.title = element_text(color="black", size=14),
+    legend.text = element_text(color="black", size=12),
+    legend.key.size = unit(1, 'cm'),
+    legend.position = "bottom",
+    axis.title.x = element_text(color="black", size=12),
+    axis.title.y = element_text(color="black", size=12, angle=90),
+    panel.grid.major = element_blank(), # switch off major gridlines
+    panel.grid.minor = element_blank()# switch off minor gridlines
+  )
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/plots/E1vsE2_Protein_LFC.pdf", height = 4, width = 8)
+fig_trend
+dev.off()
+```
+
+
+
+
+more comparisons
+#########
+
+#filter to keep comparisons of interest and mutate so that percent p and ASV's are in the correct order
+
+```{r}
+E1vsE2_PROTEIN_df2 <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/output/edit_E1vsE2_PROTEIN_DF_RES_PAIR_AND_Taxonomy_fig.csv") %>%
+  filter(group_in_E1vsE2_order ==  "E1_2.5PvsE2_2.5P" |
+           group_in_E1vsE2_order ==  "E1_5PvsE2_5P" |
+           group_in_E1vsE2_order ==  "E1_10PvsE2_10P"|
+           group_in_E1vsE2_order ==  "E1_2.5PvsE2_10P"|
+           group_in_E1vsE2_order ==  "E1_2.5PvsE2_5P"|
+           group_in_E1vsE2_order ==  "E1_5PvsE2_2.5P"|
+           group_in_E1vsE2_order ==  "E1_5PvsE2_10P"|
+           group_in_E1vsE2_order ==  "E1_10PvsE2_2.5P"|
+           group_in_E1vsE2_order ==  "E1_10PvsE2_5P")%>%
+ mutate(Differentially_Abundant_Group = factor(Differentially_Abundant_Group, levels = c("E1_2.5P","E1_5P", "E1_10P", "E2_2.5P", "E2_5P", "E2_10P"))) %>%
+ mutate(Differentially_Abundant_Protein = factor(Differentially_Abundant_Protein, levels = c("2.5P","5P", "10P"))) %>%
+ mutate(taxon = factor(family, levels = c("Bacteroidaceae", "Porphyromonadaceae", "Tannerellaceae", "Desulfovibrionaceae")))
+
+#save df
+#write.csv(E1vsE2_PROTEIN_df2,"/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/output/E1vsE2_Protein_only_df2.csv")
+
+```
+
+Change for Low, Med, High Protein Diet
+```{r}
+#first you want to factor your items. These are the names of the Location in the order I want them to be every time. 
+E1vsE2_PROTEIN_df2$Differentially_Abundant_Protein <-factor(E1vsE2_PROTEIN_df2$Differentially_Abundant_Protein, levels = c("2.5P","5P", "10P"))
+
+#now create an object that is a list of colors in a certain order.The colors I chose are "color-blind friendly":
+Protein_Scale <- c("#cb146e", "#f7ce45","#1983fc")
+#scales::show_col(DietScale)
+
+#now we want to merge the two. We are taking the order from the locations and telling it that it needs to match the order from the cbPalette.
+names(Protein_Scale) <- levels(E1vsE2_PROTEIN_df2$Differentially_Protein)
+#Have you ever used the scale_colour_manual command? Now we can combine that command and all of the stuff we want in it into a new object, LocationColors. At the end of your ggplot code, just add a +DietColor (or whatever you decide to name it), and it should pull the colors you made! 
+ProteinColors<- scale_colour_manual(name="Protein", values= Protein_Scale)
+```
+
+Plot it!
+```{r}
+fig_trend = E1vsE2_PROTEIN_df2 %>% 
+  ggplot(aes(x = lfc_E1vsE2, y = taxon, color = Differentially_Abundant_Protein)) + 
+  geom_point(size = 4, position = position_dodge()) +
+  geom_errorbar(
+    aes(xmin = lfc_E1vsE2 - se, xmax = lfc_E1vsE2 + se), 
+    width = .2) +
+  geom_vline(aes(xintercept = 0), linetype = "dashed")+
+  #facet_wrap(~Differentially_Abundant_Location) +
+  labs(x = "Log Fold Change", y = "family", title = "Differentially Abundant Taxa\n by Diet Treatment ") +
+  ProteinColors +
+  scale_x_continuous(limits=c(-7, 7)) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12, angle = 90),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text = element_text(size=6),
+    strip.text.y = element_text(color="black", size=12, angle=90),
+    legend.title = element_text(color="black", size=14),
+    legend.text = element_text(color="black", size=12),
+    legend.key.size = unit(1, 'cm'),
+    legend.position = "bottom",
+    axis.title.x = element_text(color="black", size=12),
+    axis.title.y = element_text(color="black", size=12, angle=90),
+    panel.grid.major = element_blank(), # switch off major gridlines
+    panel.grid.minor = element_blank()# switch off minor gridlines
+  )
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/Metagenomics/ANCOMBC/plots/E1vsE2_Protein_LFC_edit_All.pdf", height = 4, width = 8)
+fig_trend
+dev.off()
+```
