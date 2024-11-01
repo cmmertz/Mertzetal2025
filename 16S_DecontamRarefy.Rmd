@@ -1,0 +1,572 @@
+---
+title: "How to decontaminate and rarefy 16S microbiome data"
+author: "Conner Mertz"
+date: "4/9/2022"
+output: html_document
+---
+
+This code details how to decontaminate and rarefy 16S microbiome and food data. Input is un-rarefied phyloseq object, output is cleaned and rarefied microbiome phyloseq object. 
+
+Please note: In the following code, Experiment 1 (E1) refers to animals fed the synthetic diet, while Experiment 2 (E2) refers to those fed the semi-natural diet.
+
+## Setup
+Set speed to 42 to ensure reproducibility across sessions for entire document
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(42)
+```
+
+## Download and load packages, set theme
+```{r packages, echo=FALSE, message=FALSE}
+#install packages
+
+#special phyloseq, DESeq2, and decontam installation (only need to do this once)
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("phyloseq") #
+BiocManager::install("DESeq2") #
+BiocManager::install("decontam") #
+BiocManager::install("ANCOMBC") #
+BiocManager::install("randomForest")
+install.packages("remotes")
+devtools::install_github("vmikk/metagMisc")
+remotes::install_github("vmikk/metagMisc")
+install.packages("caret")
+install.packages("ggplot2", dependencies = TRUE) #
+install.packages("gridExtra", dependencies = TRUE) #
+install.packages("ggpubr", dependencies = TRUE) 
+install.packages("ggthemes", dependencies = TRUE) #
+install.packages("vegan", dependencies = TRUE) #
+install.packages("MASS", dependencies = TRUE)
+install.packages("cluster", dependencies = TRUE)
+install.packages("RColorBrewer", dependencies = TRUE) #
+install.packages("grid", dependencies = TRUE)
+install.packages("cooccur", dependencies = TRUE)
+install.packages("igraph", dependencies = TRUE)
+install.packages("Hmisc", dependencies = TRUE)
+install.packages("minerva", dependencies = TRUE)
+install.packages("parallel", dependencies = TRUE)
+install.packages("corrplot", dependencies = TRUE)
+install.packages("tidyverse", dependencies = TRUE) #
+install.packages("dplyr", dependencies = TRUE) #
+install.packages("tidyr", dependencies = TRUE) #
+install.packages("usdm", dependencies = TRUE)
+install.packages("raster", dependencies = TRUE)
+install.packages("ecodist", dependencies = TRUE) #
+install.packages("betapart", dependencies = TRUE) #
+install.packages("psych", dependencies = TRUE)
+install.packages("DT", dependencies = TRUE) #
+install.packages("gplots", dependencies = TRUE) #
+install.packages("iNEXT")
+install.packages("plyr")
+install.packages("reshape2")
+install.packages("remotes")
+remotes::install_github("gauravsk/ranacapa")
+remotes::install_github("mahendra-mariadassou/phyloseq-extended", ref = "dev")
+devtools::install_github("vmikk/metagMisc")
+
+library(BiocManager)
+BiocManager::install("microbiome")
+
+```
+
+```{r}
+#load packages
+# = this package is definitely needed
+library(BiocManager)
+library(phyloseq) #
+library(ggplot2) #
+library(randomForest)
+library(vegan)
+library(caret)
+library(gridExtra) #
+library(ggpubr) 
+library(ggthemes) #
+library(vegan) #
+library(MASS)
+library(cluster)
+library(RColorBrewer) #
+library(grid)
+library(cooccur)
+library(igraph)
+library(Hmisc)
+#library(minerva)
+library(parallel)
+library(corrplot)
+library(tidyverse) #
+library(plyr);library(dplyr) #
+library(tidyr) #
+library(usdm) #
+library(decontam) #
+library(ecodist) #
+library(betapart) #
+#library(psych)
+#library(ggbiplot)
+library(ANCOMBC) #
+library(DT) #
+library(gplots) #
+library(remotes)
+library(metagMisc)
+library(iNEXT)
+library("DESeq2")
+packageVersion("DESeq2")
+library("reshape2")
+library("remotes")
+library("phyloseq.extended")
+#library(ggvegan) #this gives errors
+library(microbiome)
+
+
+
+select <-dplyr::select #makes sure the dplyr package version of the select function is used
+
+theme_set(theme_bw()) #sets ggplot theme
+
+```
+
+
+## Load metadata
+
+```{r}
+Meta <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/E1_E2_Meta_ALL.csv") #you should have 333 total samples
+row.names(Meta) <- Meta$Sample_ID
+#sample_data(ps) <- Meta #If you nbeed to update your meta sheet, this is how to do it without dunning dada2 again to create a whole new ps
+```
+
+## Load files and create phyloseq object
+This step loads your counts, taxonomy file, and tree from DADA2, and merges them and your meta file into one phyloseq object named "ps". Then it summarizes the ps object, prints the taxonomic ranks, lists variables from the design file, and summarizes the sequence counts for all your samples. Lastly, this removes the mitochondria, cholorplast, eukaryota, and chlorophors from your phyloseq object. 
+
+
+```{r}
+#setting up
+#read in phyloseq object from rds
+ps <- readRDS("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/DADA2_output/raw_ps.rds")
+
+ps                                                       ### Check summary of newly created phyloseq object
+rank_names(ps)                                           ### Check taxonomic rank names
+get_taxa_unique(ps, "Class")                             ### List observed taxa for a designated level
+
+ps = subset_taxa(ps, Order!="Chloroplast")          ### Remove chloroplast taxa (technically optional, but just do it)
+ps = subset_taxa(ps, Family!="Mitochondria")        ### Remove mitochondrial taxa (technically optional, but just do it)
+ps = subset_taxa(ps, Kingdom!="Eukaryota")        ### Remove mitochondrial taxa (technically optional, but just do it) 
+ps = subset_taxa(ps, Phylum!="Cyanobacteria")        ### Remove cyanobacteria taxa (technically optional, but just do it)
+#ps = subset_taxa(ps, Phylum!="NA")                   ### Remove NA)
+ps <- subset_samples(ps, Duplicate=="no")           #Remove Duplicate Samples
+ps
+
+```
+This phyloseq object has a table of 4036 amplicon sequence variants (ASVs) infered from the DADA2 algorithm from amplicon sequencing data of the V4 region of the 16S rRNA gene using SILVA version 138. The phyloseq object also includes the sample metadata information needed to use `decontam`.
+
+This phyloseq object had a table of 2601 amplicon sequence variants (ASVs) when I used the SILVA database version 132.
+
+```{r, include=FALSE}
+#optional 
+#read in data tables generated in DADA2 to visualize if you want 
+#this was made with the ASV table produced in DADA2
+ASV <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/DADA2_output/ALL_counts.csv", row.names = "Group")
+ASV <- t(ASV)
+ASV <- data.matrix(ASV)
+
+#this was made with the taxa table produced in DADA2             #optional
+taxa <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/DADA2_output/ALL_taxa.csv", row.names = "ASV")
+taxa<- as.matrix(taxa)
+
+
+#this was made with the richness table produced in DADA2        #optional
+diversity <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/DADA2_output/ALL_richness.csv", row.names = "Sample_ID")
+diversity<- as.matrix(diversity)
+```
+
+## Remove contaminant sequences -
+https://benjjneb.github.io/decontam/vignettes/decontam_intro.html
+```{r}
+library(decontam); packageVersion("decontam")
+#inspect Library sizes
+df <- as.data.frame(sample_data(ps)) # Put sample_data into a ggplot-friendly data.frame
+df$LibrarySize <- sample_sums(ps)
+df <- df[order(df$LibrarySize),]
+df$Index <- seq(nrow(df))
+ggplot(data=df, aes(x=Index, y=LibrarySize, color=Sample_or_Control)) + geom_point()
+
+```
+#Identify Contaminants- Prevalance
+In our phyloseq object, "Sample_or_Control" is the sample variable that holds the negative control information. We’ll summarize that data as a logical variable, with TRUE for control samples, as that is the form required by isContaminant.
+```{r}
+sample_data(ps)$is.neg <- sample_data(ps)$Sample_or_Control == "Control Sample"
+contamdf.prev <- isContaminant(ps, method="prevalence", neg="is.neg")
+table(contamdf.prev$contaminant)
+
+head(which(contamdf.prev$contaminant))
+
+
+```
+Prevalence-based contaminant identification has identified 29 contanminant ASVs.
+```{r}
+contamdf.prev01 <- isContaminant(ps, method="prevalence", neg="is.neg", threshold=0.1)
+table(contamdf.prev01$contaminant)
+```
+
+Let’s take a look at the number of times several of these taxa were observed in negative controls and positive samples.
+```{r}
+# Make phyloseq object of presence-absence in negative controls and true samples
+ps.pa <- transform_sample_counts(ps, function(abund) 1*(abund>0))
+ps.pa.neg <- prune_samples(sample_data(ps.pa)$Sample_or_Control == "Control Sample", ps.pa)
+ps.pa.pos <- prune_samples(sample_data(ps.pa)$Sample_or_Control == "True Sample", ps.pa)
+# Make data.frame of prevalence in positive and negative samples
+df.pa <- data.frame(pa.pos=taxa_sums(ps.pa.pos), pa.neg=taxa_sums(ps.pa.neg),
+                      contaminant=contamdf.prev$contaminant)
+ggplot(data=df.pa, aes(x=pa.neg, y=pa.pos, color=contaminant)) + geom_point() +
+  xlab("Prevalence (Negative Controls)") + ylab("Prevalence (True Samples)")
+```
+#check out which ASVs are contaminants
+```{r}
+which(contamdf.prev01$contaminant)
+```
+
+#remove the Contaminant ASVs
+```{r}
+ps_clean <- prune_taxa(!contamdf.prev01$contaminant, ps)
+ps_clean
+
+#We then considered samples with a sequencing depth of less than 2,000 reads as having failed and removed them from the dataset. 
+ps_clean <- subset_samples(ps_clean, sample_sums(ps_clean) > 2000)
+
+saveRDS(ps_clean, "/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/DADA2_output/clean_ps.rds")
+
+#read in CLEAN phyloseq object from rds
+ps_clean <- readRDS("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/DADA2_output/clean_ps.rds")
+ps_clean
+```
+
+
+####To rarefy or not to rarefy?
+My samples have uneven sample reads. Lowest read count was 6 reads, highest read count was 168535. This means there are sequencing biases I need to take care of, the sample with the more reads will show greater diversity BUT its not true. So, we need to rarefy so that all samples analyzed have the same # of reads for comparison. That means samples with reads below a certain threshold are going to be discarded. That is okay, because we want our quality control scores to be as close to 1 (100%) as possible. SO, statistical analysis thereafter will be much stronger!
+
+####there is a controversy to rarefy the data.
+Arguments for rarefying (repeated rarefying):
+Cameron et al. 2021 NATURE, Schmidt et al. 2022 FRONTIERS IN MICROBIOLOGY.
+https://doi.org/10.1038/s41598-021-01636-1
+https://doi.org/10.3389/fmicb.2022.728146
+
+Arguments against rarefying:
+McMurdie and Holmes 2014, https://doi.org/10.1371/journal.pcbi.1003531
+According to benji and the "why rarefying is inadmissile" paper we should not rarefy. We should use DESeq2 and/or edgeR. Lets try it!
+https://joey711.github.io/phyloseq-extensions/DESeq2.html
+https://micca.readthedocs.io/en/latest/phyloseq.html
+
+
+4/9/2021 
+I am stuck
+1- Should I rarefy just once? probably not.. thats what this code does tho (it rarefies once, sampling is performed with replacement, and the OTUs no longer observed in any sample are removed (trimOTUs = T).
+
+rarefy_even_depth(ps, sample.size = 8000, rngseed = FALSE, replace = TRUE, trimOTUs = TRUE, verbose = TRUE) 
+
+2- Should I rarefy repeatedly? Seems like the best option so far: https://rdrr.io/github/vmikk/metagMisc/man/phyloseq_mult_raref.html
+
+
+Other papers also use repeated rarefying:
+
+Cameron et al. 2021 NATURE, Schmidt et al. 2022 FRONTIERS IN MICROBIOLOGY.
+https://doi.org/10.1038/s41598-021-01636-1
+https://doi.org/10.3389/fmicb.2022.728146
+
+
+#Decided to perform repeated rarefying, now here are the steps on how to do this:
+
+#2 main considerations for choosing a sampling depth for rarefaction: 
+1-	what samples are we losing? 
+2-	what can we do with the sampling depth that we have? Rather have breath of sampling (more samples lower reads), or depth of sampling? Greater depth means means improved sensitivity to rare taxa. Reviewers may give you grief if your sampling depth is too low. Another metric to provide is goods coverage. As we add more sequencing depth we get better coverage, 100% is the best.)
+
+#How to find the best sampling depth for rarefaction
+1. make sample sums sheet
+2. look for breaking point in data and get a sense of the sampling depth of your data
+3. look at the coverage, you want samples with 95% or higher coverage to keep reviewers happy 
+Here are the links with more info on this: 
+https://cran.r-project.org/web/packages/iNEXT/vignettes/Introduction.html
+https://rdrr.io/github/vmikk/metagMisc/man/phyloseq_coverage_raref.html
+https://rdrr.io/github/vmikk/metagMisc/man/phyloseq_coverage.html
+#calculate goods coverage: https://rdrr.io/github/jfq3/QsRutils/man/goods.html
+
+#1. make sample sums sheet
+```{r}
+#1. make sample sums sheet
+#Visualize library Sizes to choose rarfication parameter
+sample_sums(ps_clean)
+Sample.sums <- sample_sums(ps_clean)
+
+summarize_phyloseq(ps_clean)
+```
+
+```{r, include=FALSE}       
+write.csv(Sample.sums, "/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/RarefyOutput/sample_sums.csv")  ##to look at the number of reads generated per sample in ascending order, export to an excel file like this
+#now name the column names appropriately
+#Make this code chunk false after you have made the sample sums
+```
+
+```{r}
+sample_sums <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/RarefyOutput/sample_sums.csv", row.names = "Sample_ID")
+```
+
+```{r}
+#2. look for breaking point in data and get a sense of the sampling depth of your data
+#Visulize distribution of reads for each sample
+ggplot(
+  data = sample_sums,
+  mapping = aes( x = Reads)
+  ) + geom_histogram() 
+  
+#zoom into histogram
+ggplot(
+  data = raw_sample_sums,
+  mapping = aes( x = Reads)
+  ) + geom_histogram(binwidth=500
+  ) + coord_cartesian(xlim=c(0,5000))
+
+ggplot(
+  data = raw_sample_sums,
+  mapping = aes( x = Reads)
+  ) + geom_histogram(binwidth=500
+  ) + coord_cartesian(xlim=c(0,10000))
+  
+#create geom jitter
+ggplot(
+  data = raw_sample_sums,
+  mapping = aes( x = 1, y= Reads)
+  ) + geom_jitter(
+  ) + scale_y_log10()
+
+#create geom boxplot
+ggplot(
+  data = raw_sample_sums,
+  mapping = aes( x = 1, y= Reads)
+  ) + geom_boxplot(
+  ) 
+
+#create geom violin
+ggplot(
+  data = raw_sample_sums,
+  mapping = aes( x = 1, y= Reads)
+  ) + geom_violin(
+  ) 
+
+  
+#Plot the reads per sample in assending order to look at where the data fall. 
+Readspersample <-plot(sort(sample_sums(ps)))
+```
+After looking at the sample sums distribution in the above plots, I think I should rarefy around 7500-8000 reads, but lets look at coverage now. 
+
+
+#3. look at the coverage, you want samples with 95% or higher coverage to keep reviewers happy
+```{r}
+#3. look at the coverage, you want samples with 95% or higher coverage to keep reviewers happy
+#Look at coverage according to Chao et al 2014 & Hsieh TC et al 2016
+coverage<-phyloseq_inext(ps_clean, Q = 0, curve_type = "coverage",
+               correct_singletons = FALSE, endpoint = NULL, knots = 40,
+               multithread = FALSE, show_CI = TRUE, show_sample_labels = TRUE,
+               show_plot = TRUE, justDF = TRUE, add_raw_data = TRUE)
+#lets plot it!
+coverage<-phyloseq_inext(ps_clean, Q = 0, curve_type = "coverage",
+             correct_singletons = FALSE, endpoint = NULL, knots = 40,
+               multithread = FALSE, show_CI = TRUE, show_sample_labels = FALSE,
+               show_plot = TRUE, justDF = FALSE, add_raw_data = TRUE)
+
+```
+Most samples have a coverage of above 95% if number of reads are over 7,000. 
+
+#plot using other avenues
+#https://github.com/joey711/phyloseq/issues/143
+```{r}
+#Plot the rarefaction curves using vegan function rarecurve():
+rarecurve(t(otu_table(ps)), step=50, cex=1) #this doesnt work well because my sample names show up?
+```
+
+```{r}
+#Calculate alpha diversity
+calculate_rarefaction_curves <- function(ps, measures, depths) {
+  require('plyr') # ldply
+  require('reshape2') # melt
+
+  estimate_rarified_richness <- function(ps, measures, depth) {
+    if(max(sample_sums(ps)) < depth) return()
+    ps <- prune_samples(sample_sums(ps) >= depth, ps)
+
+    rarified_ps <- rarefy_even_depth(ps, depth, verbose = FALSE)
+
+    alpha_diversity <- estimate_richness(rarified_ps, measures = measures)
+
+    # as.matrix forces the use of melt.array, which includes the Sample names (rownames)
+    molten_alpha_diversity <- melt(as.matrix(alpha_diversity), varnames = c('Sample', 'Measure'), value.name = 'Alpha_diversity')
+
+    molten_alpha_diversity
+  }
+
+  names(depths) <- depths # this enables automatic addition of the Depth to the output by ldply
+  rarefaction_curve_data <- ldply(depths, estimate_rarified_richness, ps = ps, measures = measures, .id = 'Depth', .progress = ifelse(interactive(), 'text', 'none'))
+
+  # convert Depth from factor to numeric
+  rarefaction_curve_data$Depth <- as.numeric(levels(rarefaction_curve_data$Depth))[rarefaction_curve_data$Depth]
+
+  rarefaction_curve_data
+}
+
+rarefaction_curve_data <- calculate_rarefaction_curves(ps, c('Shannon'), rep(c(1, 10, 100, 1000, 1:100 * 10000), each = 10))
+summary(rarefaction_curve_data)
+
+#Summarize alpha diversity
+rarefaction_curve_data_summary <- ddply(rarefaction_curve_data, c('Depth', 'Sample', 'Measure'), summarise, Alpha_diversity_mean = mean(Alpha_diversity), Alpha_diversity_sd = sd(Alpha_diversity))
+
+#Add sample data
+rarefaction_curve_data_summary_verbose <- merge(rarefaction_curve_data_summary, data.frame(sample_data(ps)), by.x = 'Sample', by.y = 'row.names')
+
+#Plot rarefaction curve that shows "sampling cloud" 
+library('ggplot2')
+
+ggplot(
+  data = rarefaction_curve_data_summary_verbose,
+  mapping = aes(
+    x = Depth,
+    y = Alpha_diversity_mean,
+    scale_x_continuous(breaks = scales::pretty_breaks()),
+    ymin = Alpha_diversity_mean - Alpha_diversity_sd,
+    ymax = Alpha_diversity_mean + Alpha_diversity_sd,
+    colour = Location,
+    group = Sample
+  )
+) + geom_line(
+) + geom_pointrange(
+) + facet_wrap(
+  facets = ~ Measure,
+  scales = 'free_y'
+)
+
+library('ggplot2')
+
+ggplot(
+  data = rarefaction_curve_data_summary_verbose,
+  mapping = aes(
+    x = Depth,
+    y = Alpha_diversity_mean,
+    ymin = Alpha_diversity_mean - Alpha_diversity_sd,
+    ymax = Alpha_diversity_mean + Alpha_diversity_sd,
+    colour = Location,
+    group = Sample
+  )
+) + geom_line(
+) + geom_pointrange(
+) + facet_wrap(
+  facets = ~ Measure,
+  scales = 'free_y'
+)
+
+```
+
+```{r}
+# Plot using ggrare
+#https://rdrr.io/github/gauravsk/ranacapa/man/ggrare.html
+ggrare(ps, step = 50, label = NULL, color = "Location",
+  plot = TRUE, parallel = FALSE, se = TRUE)
+
+```
+It looks like the samples with the lowest lib sizes (total read counts) are from Ileum and Duod samples. Cecum are overall the highest. When I rarefied at lib size 8000 (which was a conservative estimate based on the rarecurves I looked at) I lost 30 samples. Most were illeum and duodenum samples and one was a cecum sample. So we have to decide, the higher reads we chose, the better quality statistical analysis but we lose samples. I think I am going to choose a lib size of 6500-8000 so that we can keep most cecum samples in the analysis and still have a relatively high lib size for analysis. For now I am going to rarefy at 8000. 
+
+#Repeatedly Rarefy 
+https://rdrr.io/github/vmikk/metagMisc/man/phyloseq_mult_raref.html
+```{r}
+ps_rare_8000 <- phyloseq_mult_raref(ps_clean, replace=F, MinSizeThreshold = 8000, SampSize = 8000, iter = 1000)
+#save your new rarefied phyloseq object as rds
+ps_rare_8000[[1]]
+saveRDS(ps_rare_8000[[1]], "/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/RarefyOutput/ps_rare.rds")
+
+```
+
+#x= A phyloseq-class object
+               #SampSize= Rarefaction depth (number of reads to sample)
+               #MinSizeTreshold	=Remove samples with number of reads less then this  
+               treshold 
+               #iter=Number of rarefication iterations 
+               #replace	= Logical, whether to sample with replacement (TRUE) or 
+               without replacement (FALSE, default) 
+               #multithread	=Logical or integer; if TRUE, attempts to run the 
+               function on multiple cores; integer defines the number of cores to use
+               (if it is set to TRUE, all cores will be used)
+               #seeds= Integer vector used for the reproducible random subsampling 
+               (should be of the same length as the number of iterations)
+               #Additional arguments will be passed to rarefy_even_depth
+               #Do not remove OTUs from the dataset that are no longer observed in 
+               any sample (have a count of zero in every sample) ('trimOTUs = F')
+
+
+######START HERE IF YOU ALREADY RAN DADA2, ASSIGNED TAXONOMY, AND RAREFIED######
+
+```{r}
+#read in rarified phyloseq object saved as RDS
+ps_all <- readRDS("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/RarefyOutput/ps_rare.rds")    #this is my phyloseq object I will be using for the remainder of my analysis (except ANCOMBC!, use ps_clean.rds for that). It contains all samples from E1 and E2 (duplicates excluded) and has been rarefied at lib size of 8000.
+ps_all
+```
+
+
+#Get ASV names AND their sequences
+```{r}
+refseq(ps_all)
+
+seqs <- as.data.frame(refseq(ps_all))
+
+colnames(seqs) <- c("Sequence")
+
+```
+
+#create sample sums to check out samples present
+```{r}
+sample_sums(ps_all) #conner change these to ps_all! Now this is where you can start your analysis yipieeee
+
+ps_rare_sample.sums <- sample_sums(ps_all)
+#write.csv(ps_rare_sample.sums, "/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/rare_8000evendepth_sample.sums.csv", row.names = TRUE)  ##to look at the number of reads generated per sample in ascending order, export to an excel file
+```
+
+```{r}
+#look at coverage of rarefied data
+
+rare_coverage<-phyloseq_inext(ps_all, Q = 0, curve_type = "coverage",
+               correct_singletons = FALSE, endpoint = NULL, knots = 40,
+               multithread = FALSE, show_CI = TRUE, show_sample_labels = TRUE,
+               show_plot = TRUE, justDF = TRUE, add_raw_data = TRUE)
+```
+
+
+  
+```{r}   
+###Relativize data to relative abundance
+#NOTE: If you try to make relative abundance plots for different sample groupings (say, by Location), the bars won't be the same height
+#unless each Location has the exact same number of samples. Which it probably doesn't. Poor you. Sorry
+ps_rare_rel<- transform_sample_counts(ps_all, function(x) 100*x/sum(x))
+
+```
+ 
+ #Visualize rarefied data using https://micca.readthedocs.io/en/latest/phyloseq.html
+```{r}
+#Plot abundace of rarefied 
+plot_bar(ps_all, fill="Phylum")
+#plot relative abundance
+plot_bar(ps_rare_rel, fill="Phylum")
+
+```
+
+              
+#create csv files from rarefeied data
+```{r}
+#these out because CSVs have been created
+
+#write.csv(coverage, "/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_All_raw_coverage.csv", row.names = FALSE) #look at column "SC" which stands for sample coverage, 1=100% 
+
+#write.csv(rare_coverage, "/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_All_rare_coverage.csv", row.names = FALSE)
+
+#Create Meta file without samples that got murdered during rarefaction 
+#Meta_rare <- sample_data(ps_all)
+#write.csv(Meta_rare, "/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/Meta_rare.csv")
+
+```
+
+
+
+
+
