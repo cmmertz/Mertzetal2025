@@ -1,0 +1,1404 @@
+---
+title: "16SDiversity Composition"
+author: "Conner Mertz"
+date: "2023-06-30"
+output: html_document
+---
+Script for alpha and beta diversity analyses for microbiome and diet data. Includes code for 16S alpha and beta diversity figures, and overall relative abundance figure. 
+
+Please note: In the following code, Experiment 1 (E1) refers to animals fed the synthetic diet, while Experiment 2 (E2) refers to those fed the semi-natural diet.
+
+## Setup
+Set speed to 42 to ensure reproducibility across sessions for entire document
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(42)
+```
+
+```{r}
+## Load metadata
+#Meta <- read.csv("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_Meta_ALL_BACKUP.csv") #you should have 309 total samples
+#row.names(Meta) <- Meta$Sample_ID
+
+Meta <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/E1_E2_Meta_ALL.csv") #you should have 333 total samples
+row.names(Meta) <- Meta$Sample_ID
+
+#sample_data(ps) <- Meta #If you nbeed to update your meta sheet, this is how to do it without dunning dada2 again to create a whole new ps
+```
+
+```{r}
+#load packages
+# = this package is definitely needed
+library(BiocManager)
+library(phyloseq) #
+library(ggplot2) #
+library(randomForest)
+library(vegan)
+library(caret)
+library(gridExtra) #
+library(ggpubr) 
+library(ggthemes) #
+library(vegan) #
+library(MASS)
+library(cluster)
+library(RColorBrewer) #
+library(grid)
+library(cooccur)
+library(igraph)
+library(Hmisc)
+#library(minerva)
+library(parallel)
+library(corrplot)
+library(tidyverse) #
+library(plyr);library(dplyr) #
+library(tidyr) #
+library(usdm) #
+library(decontam) #
+library(ecodist) #
+library(betapart) #
+#library(psych)
+#library(ggbiplot)
+library(ANCOMBC) #
+library(DT) #
+library(gplots) #
+library(remotes)
+library(metagMisc)
+library(iNEXT)
+library("DESeq2")
+packageVersion("DESeq2")
+library("reshape2")
+library("remotes")
+library("phyloseq.extended")
+#library(ggvegan) 
+#library(ggpubfigs)
+#library(agricolae) #this package is not compatable with this version of R, if we really need it we will need to install new version of package
+library(RColorBrewer)
+library(scales)
+library("devtools")
+
+theme_set(theme_bw()) #sets ggplot theme
+```
+#read in ps objects
+```{r}
+ps_raw <- readRDS("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/DADA2_output/clean_ps.rds") #raw but with choloro,mito, low reads (less than 2000), and sample duplicates removed
+ps_all <- readRDS("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/RarefyOutput/ps_rare.rds") #this is my phyloseq object I will be using for the majority of my analysis. It contains all samples from E1 and E2 (duplicates not included) and has been rarefied at lib size of 8000.
+sample_data(ps_raw) <- Meta #If you beed to update your meta sheet, this is how to do it without dunning dada2 again to create a whole new ps
+sample_data(ps_all) <- Meta #If you beed to update your meta sheet, this is how to do it without dunning dada2 again to create a whole new ps
+```
+
+#subset you ps objects
+```{r}
+#sample_names(ps_all)
+
+
+### Make new phyloseq object of just E1, no duplicates
+E1_ps <- subset_samples(ps_all, Experiment=="E1")
+#sample_names(E1_ps)                                             ### List of sample names from design file
+
+
+#Subset by E1 2.5P,5P, 10P only to compare to E2; no duplicates
+E1_forcomparison <- subset_samples(E1_ps, Percent_Protein %in% c("2.5P", "5P", "10P"))
+E1_forcomparison <- subset_samples(E1_forcomparison, Location %in% c("Duodenum", "Ileum", "Cecum"))
+#sample_names(E1_forcomparison)
+
+#Subset by E1 and E2 2.5P,5P, 10P; no duplicates
+E1_E2_forcomparison <- subset_samples(ps_all, Percent_Protein %in% c("2.5P", "5P", "10P"))
+E1_E2_forcomparison <- subset_samples(E1_E2_forcomparison, Location %in% c("Duodenum", "Ileum", "Cecum"))
+#sample_names(E1_E2_forcomparison)
+
+#Subset E1 by Location, no duplicates
+E1_E2_duodenum <- subset_samples(E1_E2_forcomparison, Location =="Duodenum")
+E1_E2_ileum <- subset_samples(E1_E2_forcomparison, Location =="Ileum")
+E1_E2_cecum <- subset_samples(E1_E2_forcomparison, Location =="Cecum")
+
+
+#Subset E1 by Location, no duplicates
+E1_duodenum <- subset_samples(E1_forcomparison, Location =="Duodenum")
+#sample_names(E1_duodenum)
+#E1_duodenum
+E1_ileum <- subset_samples(E1_forcomparison, Location =="Ileum")
+#sample_names(E1_ileum)
+#E1_ileum
+E1_cecum <- subset_samples(E1_forcomparison, Location =="Cecum")
+#sample_names(E1_cecum)
+#E1_cecum
+
+#E1_colon <- subset_samples(E1_ps, Location =="Colon")
+#sample_names(E1_colon)
+#E1_colon
+
+#supset by diet AND location
+#Duod
+E1_2.5P_duodenum <- subset_samples(E1_duodenum, Percent_Protein =="2.5P")
+#sample_names(E1_2.5P_duodenum)
+#E1_2.5P_duodenum
+E1_5P_duodenum <- subset_samples(E1_duodenum, Percent_Protein =="5P")
+#sample_names(E1_5P_duodenum)
+#E1_5P_duodenum
+E1_10P_duodenum <- subset_samples(E1_duodenum, Percent_Protein =="10P")
+#sample_names(E1_10P_duodenum)
+#E1_10P_duodenum
+#ileum
+E1_2.5P_ileum <- subset_samples(E1_ileum, Percent_Protein =="2.5P")
+#sample_names(E1_2.5P_ileum)
+#E1_2.5P_ileum
+E1_5P_ileum <- subset_samples(E1_ileum, Percent_Protein =="5P")
+#sample_names(E1_5P_ileum)
+#E1_5P_ileum
+E1_10P_ileum <- subset_samples(E1_ileum, Percent_Protein =="10P")
+#sample_names(E1_10P_ileum)
+#E1_10P_ileum
+#cecum
+E1_2.5P_cecum <- subset_samples(E1_cecum, Percent_Protein =="2.5P")
+#sample_names(E1_2.5P_cecum)
+#E1_2.5P_cecum
+E1_5P_cecum <- subset_samples(E1_cecum, Percent_Protein =="5P")
+#sample_names(E1_5P_cecum)
+#E1_5P_cecum
+E1_10P_cecum <- subset_samples(E1_cecum, Percent_Protein =="10P")
+#sample_names(E1_10P_cecum)
+#E1_10P_cecum
+
+#subset by E1_diet
+E1_2.5P <- subset_samples(E1_ps, Percent_Protein =="2.5P")
+#sample_names(E1_2.5P)
+E1_5P <- subset_samples(E1_ps, Percent_Protein =="5P")
+#sample_names(E1_5P)
+E1_10P <- subset_samples(E1_ps, Percent_Protein =="10P")
+#sample_names(E1_10P)
+E1_15P <- subset_samples(E1_ps, Percent_Protein =="15P")
+#sample_names(E1_15P)
+E1_20P <- subset_samples(E1_ps, Percent_Protein =="20P")
+#sample_names(E1_20P)
+E1_40P <- subset_samples(E1_ps, Percent_Protein =="40P")
+#sample_names(E1_40P)
+
+
+
+### Make new phyloseq object of just E2, remove food balls
+E2_ps <- subset_samples(ps_all, Experiment=="E2")   
+E2_ps <- subset_samples(E2_ps, Location %in% c("Duodenum", "Ileum", "Cecum"))
+
+#sample_names(E2_ps)
+
+#Subset by Location
+E2_duodenum <- subset_samples(E2_ps, Location =="Duodenum")
+#sample_names(E2_duodenum)
+E2_ileum <- subset_samples(E2_ps, Location =="Ileum")
+#sample_names(E2_ileum)
+E2_cecum <- subset_samples(E2_ps, Location =="Cecum")
+#sample_names(E2_cecum)
+
+
+#subset by location and diet
+E2_2.5P_duodenum <- subset_samples(E2_duodenum, Percent_Protein =="2.5P")
+#sample_names(E2_2.5P_duodenum)
+#E2_2.5P_duodenum
+E2_5P_duodenum <- subset_samples(E2_duodenum, Percent_Protein =="5P")
+#sample_names(E2_5P_duodenum)
+#E2_5P_duodenum
+E2_10P_duodenum <- subset_samples(E2_duodenum, Percent_Protein =="10P")
+#sample_names(E2_10P_duodenum)
+#E2_10P_duodenum
+
+E2_2.5P_ileum <- subset_samples(E2_ileum, Percent_Protein =="2.5P")
+#sample_names(E2_2.5P_ileum)
+#E2_2.5P_ileum
+E2_5P_ileum <- subset_samples(E2_ileum, Percent_Protein =="5P")
+#sample_names(E2_5P_ileum)
+#E2_5P_ileum
+E2_10P_ileum <- subset_samples(E2_ileum, Percent_Protein =="10P")
+#sample_names(E2_10P_ileum)
+#E2_10P_ileum
+
+E2_2.5P_cecum <- subset_samples(E2_cecum, Percent_Protein =="2.5P")
+#sample_names(E2_2.5P_cecum)
+#E2_2.5P_cecum
+E2_5P_cecum <- subset_samples(E2_cecum, Percent_Protein =="5P")
+#sample_names(E2_5P_cecum)
+#E2_5P_cecum
+E2_10P_cecum <- subset_samples(E2_cecum, Percent_Protein =="10P")
+#sample_names(E2_10P_cecum)
+#E2_10P_cecum
+
+#subset by diet
+E2_2.5P <- subset_samples(E2_ps, Percent_Protein =="2.5P")
+#sample_names(E2_2.5P)
+E2_5P <- subset_samples(E2_ps, Percent_Protein =="5P")
+#sample_names(E2_5P)
+E2_10P <- subset_samples(E2_ps, Percent_Protein =="10P")
+#sample_names(E2_10P)
+
+
+
+
+#Subset to include food balls and samples
+E1_E2_forcomparison_samples_foodballs <- subset_samples(ps_all, Percent_Protein %in% c("2.5P", "5P", "10P"))
+E1_E2_forcomparison_samples_foodballs <- subset_samples(E1_E2_forcomparison_samples_foodballs, Location %in% c("Duodenum", "Ileum", "Cecum", "Foodball"))
+sample_names(E1_E2_forcomparison_samples_foodballs)
+
+#Subset to include ONLY food balls
+E1_E2_foodballs <- subset_samples(E1_E2_forcomparison_samples_foodballs, Location %in% c("Foodball"))
+sample_names(E1_E2_foodballs)
+E1_foodballs <- subset_samples(E1_E2_foodballs, Experiment =="E1")
+sample_names(E1_foodballs)
+E2_foodballs <- subset_samples(E1_E2_foodballs, Experiment =="E2")
+sample_names(E2_foodballs)
+
+#E1 Subset to include food balls and samples
+E1_forcomparison_samples_foodballs <- subset_samples(E1_E2_forcomparison_samples_foodballs, Experiment =="E1")
+sample_names(E1_forcomparison_samples_foodballs)
+
+#E1 Subset to include food balls and samples
+E2_forcomparison_samples_foodballs <- subset_samples(E1_E2_forcomparison_samples_foodballs, Experiment =="E2")
+sample_names(E2_forcomparison_samples_foodballs)
+
+```
+
+#Set up- colors to match location
+```{r}
+#first you want to factor your items. These are the names of the Location in the order I want them to be every time. 
+Meta$Location <-factor(Meta$Location, levels=c("Duodenum", "Ileum", "Cecum","Foodball"))
+
+#now create an object that is a list of colors in a certain order.The colors I chose are "color-blind friendly":
+LocationScale <- c("#440a48","#47da7a","#dba0ff", "#808080")
+#scales::show_col(LocationScale)
+
+#now we want to merge the two. We are taking the order from the locations and telling it that it needs to match the order from the cbPalette.
+names(LocationScale) <- levels(Meta$Location)
+#Have you ever used the scale_colour_manual command? Now we can combine that command and all of the stuff we want in it into a new object, LocationColors. At the end of your ggplot code, just add a +LocationColors (or whatever you decide to name it), and it should pull the colors you made! 
+LocationColors<- scale_colour_manual(name="Location", values=LocationScale)
+```
+
+
+
+Set up colors for Exp_location
+```{r}
+#first you want to factor your items. These are the names of the Location in the order I want them to be every time. 
+Meta$Exp_Location <-factor(Meta$Exp_Location, levels=c("E1_DUOD", "E2_DUOD", "E1_IL", "E2_IL", "E1_CEC", "E2_CEC", "E1_Food", "E2_Food"))
+
+#now create an object that is a list of colors in a certain order.The colors I chose are "color-blind friendly":
+Exp_LocationScale <- c("#440a48","#440a48", "#47da7a", "#47da7a","#dba0ff", "#dba0ff", "#808080", "#808080")
+
+#now we want to merge the two. We are taking the order from the locations and telling it that it needs to match the order from the cbPalette.
+names(Exp_LocationScale) <- levels(Meta$Exp_Location)
+#Have you ever used the scale_colour_manual command? Now we can combine that command and all of the stuff we want in it into a new object, LocationColors. At the end of your ggplot code, just add a +LocationColors (or whatever you decide to name it), and it should pull the colors you made! 
+Exp_LocationColors<- scale_colour_manual(name="Exp_Location", values=Exp_LocationScale)
+```
+
+```{r}
+#Set up- colors to match diet treatment
+#first you want to factor your items. These are the names of the Location in the order I want them to be every time. 
+Meta$Percent_Protein <-factor(Meta$Percent_Protein, levels=c("2.5P", "5P", "10P"))
+
+#now create an object that is a list of colors in a certain order.The colors I chose are "color-blind friendly":
+DietScale <- c("#cb146e", "#f7ce45","#1983fc")
+#scales::show_col(DietScale)
+
+#now we want to merge the two. We are taking the order from the locations and telling it that it needs to match the order from the cbPalette.
+names(DietScale) <- levels(Meta$Percent_Protein)
+#Have you ever used the scale_colour_manual command? Now we can combine that command and all of the stuff we want in it into a new object, LocationColors. At the end of your ggplot code, just add a +DietColor (or whatever you decide to name it), and it should pull the colors you made! 
+DietColors<- scale_colour_manual(name="Percent_Protein", values=DietScale)
+```
+
+
+Colors!
+```{r}
+#first you want to factor your items. These are the names of the category in the order I want them to be every time. 
+Meta$Exp_Diet_Location <-factor(Meta$Exp_Diet_Location, levels=c("E1_2.5P_CEC", "E1_5P_CEC", "E1_10P_CEC","E2_2.5P_CEC", "E2_5P_CEC", "E2_10P_CEC"))
+
+#now create an object that is a list of colors in a certain order.The colors I chose are "color-blind friendly":
+Exp_Diet_Scale <- c("#e6550d", "#fdae6b","#fee6ce","#3182bd", "#9ecae1","#deebf7")
+#scales::show_col(DietScale)
+
+#now we want to merge the two. We are taking the order from the locations and telling it that it needs to match the order from the cbPalette.
+names(Exp_Diet_Scale) <- levels(Meta$Exp_Diet_Location)
+#Have you ever used the scale_colour_manual command? Now we can combine that command and all of the stuff we want in it into a new object, LocationColors. At the end of your ggplot code, just add a +DietColor (or whatever you decide to name it), and it should pull the colors you made! 
+Exp_DietColors<- scale_colour_manual(name="Exp_Diet_Location", values=Exp_Diet_Scale)
+```
+
+
+```{r}
+#to make Phylum always the same color:
+
+phyColor <- c(Acidobacteriota = "#b40030",
+  Actinobacteriota = "#812a00", 
+  Bacteroidota = "#f37c37", 
+  Campylobacterota = "#e8d143",
+  Deferribacterota= "#7e7d00", 
+  Desulfobacterota= "#9fad62",
+  Firmicutes = "#028cfb",
+  Fusobacteriota = "#01d78c",
+  Gemmatimonadota = "#005723", 
+  Nitrospirota = "#c9106e", 
+  Planctomycetota = "#d58dc6" ,
+  Proteobacteria = "#bf329b",
+  Verrucomicrobiota = "#002f77") 
+
+#Then use this code in for your plot
+#scale_fill_manual(values = phyColor)
+
+#Tip: it can be rather difficult to find acceptable colors when you have many discrete variables. Check out this great open-source tool, which allows you to randomly generate as many colors as you need, and gives them in a nice, easily copy-pasteable form - https://medialab.github.io/iwanthue/ or https://colorbrewer2.org/#type=sequential&scheme=Blues&n=5
+ 
+```
+
+
+
+#Set order of x variables on x axes
+#run this code before making any graphs!
+```{r}
+#X axes for Percent_Protein
+#repeat for each major phyloseq object I have created
+#indicate levels
+Percent_Protein.orderALL <- c("2.5P", "5P", "10P","15P", "20P","40P") #these will have all of the diet treatments 
+
+sample_data(ps_all)$Percent_Protein <- factor(sample_data(ps_all)$Percent_Protein, levels= Percent_Protein.orderALL)
+levels(get_variable(ps_all, "Percent_Protein"))
+
+sample_data(E1_ps)$Percent_Protein <- factor(sample_data(E1_ps)$Percent_Protein, levels= Percent_Protein.orderALL)
+levels(get_variable(E1_ps, "Percent_Protein"))
+
+#indicate levels
+Percent_Protein.orderSUBSET <- c("2.5P", "5P", "10P") #this will just have the treatments conducted in E2 used for comparison
+
+sample_data(E2_ps)$Percent_Protein <- factor(sample_data(E2_ps)$Percent_Protein, levels= Percent_Protein.orderSUBSET)
+levels(get_variable(E2_ps, "Percent_Protein"))
+
+
+sample_data(E1_forcomparison)$Percent_Protein <- factor(sample_data(E1_forcomparison)$Percent_Protein, levels= Percent_Protein.orderSUBSET)
+levels(get_variable(E1_forcomparison, "Percent_Protein"))
+
+sample_data(E1_E2_forcomparison)$Percent_Protein <- factor(sample_data(E1_E2_forcomparison)$Percent_Protein, levels= Percent_Protein.orderSUBSET)
+levels(get_variable(E1_E2_forcomparison, "Percent_Protein"))
+
+sample_data(E1_E2_forcomparison_samples_foodballs)$Percent_Protein <- factor(sample_data(E1_E2_forcomparison_samples_foodballs)$Percent_Protein, levels= Percent_Protein.orderSUBSET)
+levels(get_variable(E1_E2_forcomparison_samples_foodballs, "Percent_Protein"))
+
+
+sample_data(E1_E2_foodballs)$Percent_Protein <- factor(sample_data(E1_E2_foodballs)$Percent_Protein, levels= Percent_Protein.orderSUBSET)
+levels(get_variable(E1_E2_foodballs, "Percent_Protein"))
+
+sample_data(E1_forcomparison_samples_foodballs)$Percent_Protein <- factor(sample_data(E1_forcomparison_samples_foodballs)$Percent_Protein, levels= Percent_Protein.orderSUBSET)
+levels(get_variable(E1_forcomparison_samples_foodballs, "Percent_Protein"))
+
+sample_data(E2_forcomparison_samples_foodballs)$Percent_Protein <- factor(sample_data(E2_forcomparison_samples_foodballs)$Percent_Protein, levels= Percent_Protein.orderSUBSET)
+levels(get_variable(E2_forcomparison_samples_foodballs, "Percent_Protein"))
+
+
+sample_data(E1_duodenum)$Percent_Protein <- factor(sample_data(E1_duodenum)$Percent_Protein, levels= Percent_Protein.orderSUBSET)
+levels(get_variable(E1_duodenum, "Percent_Protein"))
+
+sample_data(E1_ileum)$Percent_Protein <- factor(sample_data(E1_ileum)$Percent_Protein, levels= Percent_Protein.orderSUBSET)
+levels(get_variable(E1_ileum, "Percent_Protein"))
+
+sample_data(E1_cecum)$Percent_Protein <- factor(sample_data(E1_cecum)$Percent_Protein, levels= Percent_Protein.orderSUBSET)
+levels(get_variable(E1_cecum, "Percent_Protein"))
+
+
+sample_data(E2_duodenum)$Percent_Protein <- factor(sample_data(E2_duodenum)$Percent_Protein, levels= Percent_Protein.orderSUBSET)
+levels(get_variable(E2_duodenum, "Percent_Protein"))
+
+sample_data(E2_ileum)$Percent_Protein <- factor(sample_data(E2_ileum)$Percent_Protein, levels= Percent_Protein.orderSUBSET)
+levels(get_variable(E2_ileum, "Percent_Protein"))
+
+sample_data(E2_cecum)$Percent_Protein <- factor(sample_data(E2_cecum)$Percent_Protein, levels= Percent_Protein.orderSUBSET)
+levels(get_variable(E2_cecum, "Percent_Protein"))
+
+sample_data(E1_E2_duodenum)$Percent_Protein <- factor(sample_data(E1_E2_duodenum)$Percent_Protein, levels= Percent_Protein.orderSUBSET)
+levels(get_variable(E1_E2_duodenum, "Percent_Protein"))
+
+sample_data(E1_E2_ileum)$Percent_Protein <- factor(sample_data(E1_E2_ileum)$Percent_Protein, levels= Percent_Protein.orderSUBSET)
+levels(get_variable(E1_E2_ileum, "Percent_Protein"))
+
+sample_data(E1_E2_cecum)$Percent_Protein <- factor(sample_data(E1_E2_cecum)$Percent_Protein, levels= Percent_Protein.orderSUBSET)
+levels(get_variable(E1_E2_cecum, "Percent_Protein"))
+
+```
+
+```{r}
+#X axes for Exp_Location
+#repeat for each major phyloseq object I have created
+Exp_Location.order1 <- c("E1_DUOD", "E2_DUOD", "E1_IL", "E2_IL", "E1_CEC", "E2_CEC")
+sample_data(ps_all)$Exp_Location <- factor(sample_data(ps_all)$Exp_Location, levels= Exp_Location.order1)
+levels(get_variable(ps_all, "Exp_Location"))
+
+Exp_Location.order2 <- c("E1_DUOD", "E2_DUOD", "E1_IL", "E2_IL", "E1_CEC", "E2_CEC")
+sample_data(E1_E2_forcomparison)$Exp_Location <- factor(sample_data(E1_E2_forcomparison)$Exp_Location, levels= Exp_Location.order2)
+levels(get_variable(E1_E2_forcomparison, "Exp_Location"))
+
+Exp_Location.order3 <- c("E1_DUOD", "E2_DUOD", "E1_IL", "E2_IL", "E1_CEC", "E2_CEC")
+sample_data(E1_forcomparison)$Exp_Location <- factor(sample_data(E1_forcomparison)$Exp_Location, levels= Exp_Location.order3)
+levels(get_variable(E1_forcomparison, "Exp_Location"))
+
+Exp_Location.order4 <- c("E1_DUOD", "E2_DUOD", "E1_IL", "E2_IL", "E1_CEC", "E2_CEC")
+sample_data(E2_ps)$Exp_Location <- factor(sample_data(E2_ps)$Exp_Location, levels= Exp_Location.order4)
+levels(get_variable(E2_ps, "Exp_Location"))
+
+Exp_Location.order5 <- c("E1_DUOD", "E2_DUOD", "E1_IL", "E2_IL", "E1_CEC", "E2_CEC", "E1_Food", "E2_Food")
+sample_data(E1_E2_forcomparison_samples_foodballs)$Exp_Location <- factor(sample_data(E1_E2_forcomparison_samples_foodballs)$Exp_Location, levels= Exp_Location.order5)
+levels(get_variable(E1_E2_forcomparison_samples_foodballs, "Exp_Location"))
+
+```
+
+
+```{r}
+#X axes for Exp_Diet
+#repeat for each major phyloseq object I have created
+Exp_Diet.order1 <- c("E1_2.5P", "E1_5P", "E1_10P", "E1_15P", "E1_20P", "E1_40P", "E2_2.5P", "E2_5P", "E2_10P")
+sample_data(ps_all)$Exp_Diet <- factor(sample_data(ps_all)$Exp_Diet, levels= Exp_Diet.order1)
+levels(get_variable(ps_all, "Exp_Diet"))
+
+
+Exp_Diet.order3 <- c("E1_2.5P", "E1_5P", "E1_10P", "E1_15P", "E1_20P", "E1_40P")
+sample_data(E1_ps)$Exp_Diet <- factor(sample_data(E1_ps)$Exp_Diet, levels= Exp_Diet.order3)
+levels(get_variable(E1_ps, "Exp_Diet"))
+
+Exp_Diet.order4 <- c("E2_2.5P", "E2_5P", "E2_10P")
+sample_data(E2_ps)$Exp_Diet <- factor(sample_data(E2_ps)$Exp_Diet, levels= Exp_Diet.order4)
+levels(get_variable(E2_ps, "Exp_Diet"))
+
+Exp_Diet.order5 <- c("E1_2.5P", "E1_5P", "E1_10P")
+sample_data(E1_forcomparison)$Exp_Diet <- factor(sample_data(E1_forcomparison)$Exp_Diet, levels= Exp_Diet.order5)
+levels(get_variable(E1_forcomparison, "Exp_Diet"))
+
+Exp_Diet.order6 <- c("E1_2.5P", "E1_5P", "E1_10P", "E2_2.5P", "E2_5P", "E2_10P")
+sample_data(E1_E2_forcomparison)$Exp_Diet <- factor(sample_data(E1_E2_forcomparison)$Exp_Diet, levels= Exp_Diet.order6)
+levels(get_variable(E1_E2_forcomparison, "Exp_Diet"))
+
+Exp_Diet.order7 <- c("E1_2.5P", "E1_5P", "E1_10P", "E2_2.5P", "E2_5P", "E2_10P")
+sample_data(E1_E2_forcomparison_samples_foodballs)$Exp_Diet <- factor(sample_data(E1_E2_forcomparison_samples_foodballs)$Exp_Diet, levels= Exp_Diet.order7)
+levels(get_variable(E1_E2_forcomparison_samples_foodballs, "Exp_Diet"))
+
+
+
+```
+
+
+```{r}
+#X axes for Exp_Diet_Location
+#repeat for each major phyloseq object I have created
+Exp_Diet_Location.order1 <- c("E1_2.5P_DUOD","E2_2.5P_DUOD", "E1_5P_DUOD", "E2_5P_DUOD", "E1_10P_DUOD", "E2_10P_DUOD","E1_2.5P_IL","E2_2.5P_IL", "E1_5P_IL", "E2_5P_IL", "E1_10P_IL", "E2_10P_IL", "E1_2.5P_CEC","E2_2.5P_CEC", "E1_5P_CEC", "E2_5P_CEC", "E1_10P_CEC", "E2_10P_CEC")
+sample_data(E1_E2_forcomparison)$Exp_Diet_Location <- factor(sample_data(E1_E2_forcomparison)$Exp_Diet_Location, levels= Exp_Diet_Location.order1)
+levels(get_variable(E1_E2_forcomparison, "Exp_Diet_Location"))
+
+```
+
+
+```{r}
+#X axes for Location
+#repeat for each major phyloseq object I have created
+Location.order1 <- c("Duodenum", "Ileum", "Cecum", "Foodball")
+sample_data(ps_all)$Location <- factor(sample_data(ps_all)$Location, levels= Location.order1)
+levels(get_variable(ps_all, "Location"))
+
+Location.order2 <- c("Duodenum", "Ileum", "Cecum")
+sample_data(E1_E2_forcomparison)$Location <- factor(sample_data(E1_E2_forcomparison)$Location, levels= Location.order2)
+levels(get_variable(E1_E2_forcomparison, "Location"))
+
+Location.order3 <- c("Duodenum", "Ileum", "Cecum")
+sample_data(E1_forcomparison)$Location <- factor(sample_data(E1_forcomparison)$Location, levels= Location.order3)
+levels(get_variable(E1_forcomparison, "Location"))
+
+
+Location.order4 <- c("Duodenum", "Ileum", "Cecum")
+sample_data(E2_ps)$Location <- factor(sample_data(E2_ps)$Location, levels= Location.order4)
+levels(get_variable(E2_ps, "Location"))
+
+Location.order5 <- c("Duodenum", "Ileum", "Cecum", "Foodball")
+sample_data(E1_E2_forcomparison_samples_foodballs)$Location <- factor(sample_data(E1_E2_forcomparison_samples_foodballs)$Location, levels= Location.order5)
+levels(get_variable(E1_E2_forcomparison_samples_foodballs, "Location"))
+
+Location.order6 <- c("Duodenum", "Ileum", "Cecum", "Foodball")
+sample_data(E1_forcomparison_samples_foodballs)$Location <- factor(sample_data(E1_forcomparison_samples_foodballs)$Location, levels= Location.order6)
+levels(get_variable(E1_forcomparison_samples_foodballs, "Location"))
+
+Location.order7 <- c("Duodenum", "Ileum", "Cecum", "Foodball")
+sample_data(E2_forcomparison_samples_foodballs)$Location <- factor(sample_data(E2_forcomparison_samples_foodballs)$Location, levels= Location.order7)
+levels(get_variable(E2_forcomparison_samples_foodballs, "Location"))
+
+```
+
+#Alpha Diversity Analyses
+```{r}
+#Diversity metrices for E1
+plot_richness(E1_forcomparison, x="Percent_Protein", measures=c("Shannon"), color="Location") +
+  geom_point(size = 6) +
+  theme(legend.text = element_text(size=15))+
+  LocationColors+
+  labs(title = "Synthetic Diet Alpha Diversity")
+setwd("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps")
+ggsave("Synthetic Diet Alpha Diversity just E1 samples for E1 vs E2 Comparisons.pdf",height = 10, width =8)
+
+#Diversity metrices for E2
+plot_richness(E2_ps, x="Percent_Protein", measures=c("Shannon"), color="Location") +
+  geom_point(size = 6) +
+  theme(legend.text = element_text(size=15))+
+  LocationColors+
+  labs(title = "Natural Diet Alpha Diversity")
+setwd("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps/New Colors")
+ggsave("Natural Diet Alpha Diversity just E2 samples for E1 vs E2 Comparisons.pdf",height = 10, width =8)
+
+
+##to make a box plot no color
+shannon_E1 <-plot_richness(E1_forcomparison, x="Location", measures=c("Shannon"),)
+sdf <- data.frame(shannon_E1$data)
+shannonboxplot <- ggplot(sdf, aes(x= Location, y= value))+geom_boxplot() +
+  labs(title = "Synthetic Diet Alpha Diversity")
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps/New Colors/Synthetic_ShannonBoxPlot.pdf", height = 10, width =8)
+shannonboxplot
+dev.off()
+
+##E1 all samples to make a box plot
+shannon_E1 <-plot_richness(E1_ps, x="Percent_Protein", measures=c("Shannon"))
+sdf <- data.frame(shannon_E1$data)
+shannonboxplot <- ggplot(sdf, aes(x= Percent_Protein, y= value))+geom_boxplot()+
+  labs(title = "Synthetic Diet Shannon Diversity Box Plot All Samples (no duplicates)")
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps/Synthetic_all_ShannonBoxPlot.pdf", height = 10, width =8)
+shannonboxplot
+dev.off()
+```
+
+Alpha Diversity with various subsets
+```{r}
+#E1_Shannon and observed boxplot
+E1_alphaplot <- plot_richness(E1_forcomparison, x="Location", measures=c("Observed", "Shannon"), color = "Location")
+E1_alphaplot <- E1_alphaplot + geom_point(size = 4) + theme_bw()+LocationColors
+E1_alphaplot <- E1_alphaplot + geom_boxplot(data = E1_alphaplot$data, alpha = 0.1)+
+  labs(title = "Synthetic Diet Shannon Diversity")
+#pdf("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps/New Colors/E1_for comparison_Location_DiversityBoxPlot.pdf", height = 10, width = 8)
+E1_alphaplot
+dev.off()
+
+#E1 location and diet Shannon and observed boxplot
+E1_alphaplot <- plot_richness(E1_forcomparison, x="Percent_Protein", measures=c("Shannon"), color = "Location")
+E1_alphaplot <- E1_alphaplot + geom_point(size = 4) + theme_bw()+LocationColors
+E1_alphaplot <- E1_alphaplot + geom_boxplot(data = E1_alphaplot$data, alpha = 0.1)+
+  labs(title = "Synthetic Diet Shannon Diversity")
+#pdf("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps/New Colors/E1_for comparison_Location.Diet_DiversityBoxPlot.pdf", height = 10, width = 11)
+E1_alphaplot
+dev.off()
+
+#E2 Shannon and observed boxplot
+E2_alphaplot <- plot_richness(E2_ps, x="Location", measures=c("Observed", "Shannon"), color = "Location")
+E2_alphaplot <- E2_alphaplot + geom_point(size = 4) + theme_bw()+LocationColors
+E2_alphaplot <- E2_alphaplot + geom_boxplot(data = E2_alphaplot$data, alpha = 0.1)+
+  labs(title = "Semi-Natural Diet Shannon Diversity")
+#pdf("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps/New Colors/E2_for comparison_Location_DiversityBoxPlot.pdf", height = 10, width = 8)
+E2_alphaplot
+dev.off()
+
+#E2 location and diet Shannon and observed boxplot
+E2_alphaplot <- plot_richness(E2_ps, x="Percent_Protein", measures=c("Shannon"), color = "Location")
+E2_alphaplot <- E2_alphaplot + geom_point(size = 4) + theme_bw()+LocationColors
+E2_alphaplot <- E2_alphaplot + geom_boxplot(data = E2_alphaplot$data, alpha = 0.1)+
+  labs(title = "Semi-Natural Diet Shannon Diversity")
+#pdf("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps/New Colors/E2_for comparison_Location.Diet_DiversityBoxPlot.pdf", height = 10, width = 11)
+E2_alphaplot
+dev.off()
+
+#E1_v_E2 Shannon and observed boxplot
+E1_E2_alphaplot <- plot_richness(E1_E2_forcomparison, x="Exp_Diet", measures=c("Shannon"), color = "Location")
+E1_E2_alphaplot <- E1_E2_alphaplot + geom_point(size = 4) + theme_bw()+LocationColors
+E1_E2_alphaplot <- E1_E2_alphaplot + geom_boxplot(data = E1_E2_alphaplot$data, alpha = 0.1)+
+  labs(title = "Synthetic vs Semi-Natural Diet Shannon Diversity")
+#pdf("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps/New Colors/E1_E2_for comparison_Location.Diet_DiversityBoxPlot.pdf", height = 10, width = 11)
+E1_E2_alphaplot
+dev.off()
+
+#E1_v_E2 Shannon and observed boxplot
+E1_E2_alphaplot <- plot_richness(E1_E2_forcomparison, x="Experiment", measures=c("Observed", "Shannon"), color = "Location")
+E1_E2_alphaplot <- E1_E2_alphaplot + geom_point(size = 4) + theme_bw()+LocationColors
+E1_E2_alphaplot <- E1_E2_alphaplot + geom_boxplot(data = E1_E2_alphaplot$data, alpha = 0.1)+
+  labs(title = "Synthetic vs Semi-Natural Diet Overall Shannon Diversity")
+#pdf("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps/New Colors/E1_E2_for comparison_overall_DiversityBoxPlot.pdf", height = 10, width = 11)
+E1_E2_alphaplot
+dev.off()
+
+#E1_v_E2 Shannon and observed boxplot
+E1_E2_alphaplot <- plot_richness(E1_E2_forcomparison, x="Experiment", measures=c("Shannon"), color = "Location")
+E1_E2_alphaplot <- E1_E2_alphaplot + geom_point(size = 4) + theme_bw()+LocationColors
+E1_E2_alphaplot <- E1_E2_alphaplot + geom_boxplot(data = E1_E2_alphaplot$data, alpha = 0.1)+
+  labs(title = "Synthetic vs Semi-Natural Diet Overall Shannon Diversity")
+#pdf("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps/New Colors/E1_E2_for comparison_overall.1_DiversityBoxPlot.pdf", height = 10, width = 11)
+E1_E2_alphaplot
+dev.off()
+
+##Facet by Experiment E1_v_E2 Shannon boxplot
+E1_E2_alphaplot <- plot_richness(E1_E2_forcomparison, x="Location", measures=c("Shannon"), color = "Location")
+E1_E2_alphaplot <- E1_E2_alphaplot + geom_point(size = 4) + theme_bw()+LocationColors
+E1_E2_alphaplot <- E1_E2_alphaplot + geom_boxplot(data = E1_E2_alphaplot$data, alpha = 0.1)+
+  labs(title = "Synthetic vs Semi-Natural Diet Overall Shannon Diversity")+
+  facet_wrap(~Experiment, scale="free_x", ncol = "2", nrow = "1")
+#pdf("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps/New Colors/E1_E2_for comparison_overall.2_DiversityBoxPlot.pdf", height = 10, width = 11)
+E1_E2_alphaplot
+dev.off()
+
+
+
+
+##Facet by Experiment E1_v_E2 Shannon boxplot
+E1_E2_alphaplot <- plot_richness(E1_E2_forcomparison, x="Location", measures=c("Shannon"), color = "Location")
+E1_E2_alphaplot <- E1_E2_alphaplot + geom_point(size = 4) + theme_bw()+LocationColors
+E1_E2_alphaplot <- E1_E2_alphaplot + geom_boxplot(data = E1_E2_alphaplot$data, alpha = 0.1)+
+  #labs(title = "Shannon Diversity")+
+  facet_wrap(~Experiment, scale="free_x", ncol = "2", nrow = "1")+
+theme_bw() +
+  theme(
+    axis.text.x = element_text(color="black", size=14),
+    axis.text.y = element_text(color="black", size=16),
+    strip.text.y = element_text(color="black", size=16),
+    legend.title = element_text(color="black", size=22),
+    legend.text = element_text(color="black", size=16),
+    legend.position = "right",
+    strip.text = element_text(size = 20),
+    axis.title.x = element_text(color="black", size=22),
+    axis.title.y = element_text(color="black", size=22, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+#pdf("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps/New Colors/E1_E2_forcomparison_Shannon_Diversity_Location_BoxPlot.pdf", height = 10, width = 11)
+E1_E2_alphaplot
+dev.off()
+
+##Facet by Experiment E1_v_E2 Shannon boxplot
+E1_E2_alphaplot <- plot_richness(E1_E2_forcomparison, x="Percent_Protein", measures=c("Shannon"), color = "Percent_Protein")
+E1_E2_alphaplot <- E1_E2_alphaplot + geom_point(size = 4) + theme_bw()
+E1_E2_alphaplot <- E1_E2_alphaplot + geom_boxplot(data = E1_E2_alphaplot$data, alpha = 0.1)+
+  labs(title = "Synthetic vs Semi-Natural Diet Shannon Diversity by Diet")+
+  facet_wrap(~Experiment, scale="free_x", ncol = "2", nrow = "1")
+#pdf("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps/New Colors/E1_E2_for comparison_DietDiversityBoxPlot.pdf", height = 10, width = 11)
+E1_E2_alphaplot
+dev.off()
+
+##Facet by Experiment E1_v_E2 Shannon boxplot
+E1_E2_alphaplot <- plot_richness(E1_E2_forcomparison, x="Percent_Protein", measures=c("Shannon"), color = "Location")
+E1_E2_alphaplot <- E1_E2_alphaplot + geom_point(size = 4) + theme_bw()+LocationColors
+E1_E2_alphaplot <- E1_E2_alphaplot + geom_boxplot(data = E1_E2_alphaplot$data, alpha = 0.1)+
+  labs(title = "Overall Synthetic vs Semi-Natural Diet Shannon Diversity")+
+  facet_wrap(~Experiment, scale="free_x", ncol = "2", nrow = "1")
+#pdf("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps/New Colors/E1_E2_for comparison_DiversityBoxPlot.pdf", height = 10, width = 11)
+E1_E2_alphaplot
+dev.off()
+
+
+#E1_v_E2 overall
+E1_E2_alphaplot <- plot_richness(E1_E2_forcomparison, x="Experiment", measures=c("Shannon"),)
+E1_E2_alphaplot <- E1_E2_alphaplot + geom_point(size = 4) + theme_bw()
+E1_E2_alphaplot <- E1_E2_alphaplot + geom_boxplot(data = E1_E2_alphaplot$data, alpha = 0.1)+
+  labs(title = "Synthetic vs Semi-Natural Diet Overall Shannon Diversity")
+#pdf("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps/New Colors/E1_E2_for comparison_overall.3_DiversityBoxPlot.pdf", height = 10, width = 11)
+E1_E2_alphaplot
+dev.off()
+
+#E1_v_E2 overall with food balls
+##Facet by Experiment E1_v_E2 Shannon boxplot
+E1_E2_alphaplot <- plot_richness(E1_E2_forcomparison_samples_foodballs, x="Location", measures=c("Shannon"), color = "Location")
+E1_E2_alphaplot <- E1_E2_alphaplot + geom_point(size = 4) + theme_bw()+LocationColors
+E1_E2_alphaplot <- E1_E2_alphaplot + geom_boxplot(data = E1_E2_alphaplot$data, alpha = 0.1)+
+  labs(title = "Overall Synthetic vs Semi-Natural Diet Shannon Diversity")+
+  facet_wrap(~Experiment, scale="free_x")
+pdf("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/BoxplotsANDScatter_RelAbundance/E1_E2_FOODBALL_Shannon_Diversity_BoxPlot.pdf", height = 10, width = 11)
+E1_E2_alphaplot
+dev.off()
+```
+
+**Alpha Diversity Plot for manuscript**
+```{r}
+E1_E2_alphaplot <- plot_richness(E1_E2_forcomparison, x="Exp_Location", measures=c("Shannon"))
+E1_E2_alphaplot <- E1_E2_alphaplot + 
+  geom_boxplot(data = E1_E2_alphaplot$data,alpha = 0.5, outlier.size=0.1, na.rm=TRUE, position="dodge")+
+geom_point(aes(alpha=0.8, size=1, color= Location, shape= Experiment),position=position_jitterdodge(jitter.width=0.08, jitter.height=0, dodge.width=0.75, seed=NA))+
+ labs(x = "Gut Section", y = "Alpha Diversity Measure: Shannon") +
+theme_bw() +
+  LocationColors +
+  theme(
+    axis.text.x = element_text(color="black", size=14),
+    axis.text.y = element_text(color="black", size=16),
+    strip.text.y = element_text(color="black", size=16),
+    legend.title = element_text(color="black", size=22),
+    legend.text = element_text(color="black", size=16),
+    legend.position = "right",
+    strip.background = element_blank(), #to remove facet wrap title
+    strip.text = element_text(size = 20),
+    axis.title.x = element_text(color="black", size=22),
+    axis.title.y = element_text(color="black", size=22, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+E1_E2_alphaplot$layers <- E1_E2_alphaplot$layers[-1] 
+#pdf("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/BoxplotsANDScatter_RelAbundance/E1_E2_Shannon_Diversity_BoxPlot.pdf", height = 10, width = 11)
+E1_E2_alphaplot
+#dev.off()
+```
+
+
+**FoodBALL_Alpha Diversity for Manuscript**
+Supplemental figure 
+```{r}
+E1_E2_alphaplot <- plot_richness(E1_E2_forcomparison_samples_foodballs, x="Exp_Location", measures=c("Shannon"))
+E1_E2_alphaplot <- E1_E2_alphaplot + 
+  geom_boxplot(data = E1_E2_alphaplot$data,alpha = 0.5, outlier.size=0.1, na.rm=TRUE, position="dodge")+
+geom_point(aes(alpha=0.8, size=1, color= Location, shape= Experiment),position=position_jitterdodge(jitter.width=0.08, jitter.height=0, dodge.width=0.75, seed=NA))+
+ labs(x = "Sample Type", y = "Alpha Diversiy Measure: Shannon") +
+theme_bw() +
+  LocationColors +
+  theme(
+    axis.text.x = element_text(color="black", size=14),
+    axis.text.y = element_text(color="black", size=16),
+    strip.text.y = element_text(color="black", size=16),
+    legend.title = element_text(color="black", size=22),
+    legend.text = element_text(color="black", size=16),
+    legend.position = "right",
+    strip.background = element_blank(), #to remove facet wrap title
+    strip.text = element_text(size = 20),
+    axis.title.x = element_text(color="black", size=22),
+    axis.title.y = element_text(color="black", size=22, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+E1_E2_alphaplot$layers <- E1_E2_alphaplot$layers[-1] 
+pdf("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/BoxplotsANDScatter_RelAbundance/E1_E2_FOODBALL_Shannon_Diversity_BoxPlot.pdf", height = 10, width = 11)
+E1_E2_alphaplot
+#dev.off()
+```
+
+#test for significant differences iin Alpha Diversity:
+
+#https://scienceparkstudygroup.github.io/microbiome-lesson/04-alpha-diversity/index.html
+#You can use different statistical tests in order to test if there is any significant differences between treatments: parametric tests (t-test and ANOVA) or non-parametric tests (Mann-Whitney and Kruskal-Wallis). Before using parametric tests, you need to make sure that you can use them (e.g. normal distribution, homoscedasticity).Then use a post hoc to see if there are differences amoung groups within treatemts. 
+#We can export a data.frame containing a number of standard alpha diversity estimates using the phyloseq function estimate_richness()
+
+#####Instead USE Non-parametric tests:
+
+#Wilcoxon rank-sum test (Mann-Whitney)
+#https://micca.readthedocs.io/en/latest/phyloseq.html
+##https://scienceparkstudygroup.github.io/microbiome-lesson/04-alpha-diversity/index.html
+Kruskal-Wallis test by rank is a non-parametric alternative to one-way ANOVA test, which extends the two-samples Wilcoxon test in the situation where there are more than two groups. It’s recommended when the assumptions of one-way ANOVA test are not met.
+
+From the output of the Kruskal-Wallis test, we know that there is a significant difference between groups, but we don’t know which pairs of groups are different.
+
+It’s possible to use the function pairwise.wilcox.test() to calculate pairwise comparisons between group levels with corrections for multiple testing.
+
+```{r}
+#non-parametric test, the Wilcoxon rank-sum test (Mann-Whitney)
+#E1_E2 Non-Parametric diversity stats
+rich_E1_E2 = estimate_richness(E1_E2_forcomparison)
+rich_E1_E2
+#Kruskal
+kruskal.test(rich_E1_E2$Shannon ~ sample_data(E1_E2_forcomparison)$Experiment)
+kruskal.test(rich_E1_E2$Shannon ~ sample_data(E1_E2_forcomparison)$Location)
+kruskal.test(rich_E1_E2$Shannon ~ sample_data(E1_E2_forcomparison)$Percent_Protein)
+
+
+#pairwise.wilcox.test
+pairwise.wilcox.test(rich_E1_E2$Shannon, sample_data(E1_E2_forcomparison)$Experiment)
+pairwise.wilcox.test(rich_E1_E2$Shannon, sample_data(E1_E2_forcomparison)$Location)
+pairwise.wilcox.test(rich_E1_E2$Shannon, sample_data(E1_E2_forcomparison)$Percent_Protein)
+  
+#E1_Non-Parametric diversity stats
+rich_E1 = estimate_richness(E1_forcomparison)
+rich_E1
+#Kruskal
+kruskal.test(rich_E1$Shannon ~ sample_data(E1_forcomparison)$Location)
+kruskal.test(rich_E1$Shannon ~ sample_data(E1_forcomparison)$Percent_Protein)
+#pairwise.wilcox.test
+pairwise.wilcox.test(rich_E1$Shannon, sample_data(E1_forcomparison)$Location)
+pairwise.wilcox.test(rich_E1$Shannon, sample_data(E1_forcomparison)$Percent_Protein)
+
+#E2_Non-Parametric diversity stats
+rich_E2 = estimate_richness(E2_ps)
+rich_E2
+#Kruskal
+kruskal.test(rich_E2$Shannon ~ sample_data(E2_ps)$Location)
+kruskal.test(rich_E2$Shannon ~ sample_data(E2_ps)$Percent_Protein)
+#pairwise.wilcox.test
+pairwise.wilcox.test(rich_E2$Shannon, sample_data(E2_ps)$Location)
+pairwise.wilcox.test(rich_E2$Shannon, sample_data(E2_ps)$Percent_Protein)
+
+#non-parametric test, the Wilcoxon rank-sum test (Mann-Whitney)
+#E1_E2 Non-Parametric diversity stats
+rich_E1_E2 = estimate_richness(E1_E2_forcomparison)
+rich_E1_E2
+#Kruskal
+kruskal.test(rich_E1_E2$Shannon ~ sample_data(E1_E2_forcomparison)$Experiment)
+kruskal.test(rich_E1_E2$Shannon ~ sample_data(E1_E2_forcomparison)$Location)
+kruskal.test(rich_E1_E2$Shannon ~ sample_data(E1_E2_forcomparison)$Percent_Protein)
+
+```
+
+Diversity Stats incl. Food balls
+```{r}
+#non-parametric test, the Wilcoxon rank-sum test (Mann-Whitney)
+#E1_E2 Non-Parametric diversity stats
+rich_E1_E2 = estimate_richness(E1_E2_forcomparison_samples_foodballs)
+rich_E1_E2
+#Kruskal
+kruskal.test(rich_E1_E2$Shannon ~ sample_data(E1_E2_forcomparison_samples_foodballs)$Experiment)
+kruskal.test(rich_E1_E2$Shannon ~ sample_data(E1_E2_forcomparison_samples_foodballs)$Location)
+kruskal.test(rich_E1_E2$Shannon ~ sample_data(E1_E2_forcomparison_samples_foodballs)$Percent_Protein)
+kruskal.test(rich_E1_E2$Shannon ~ sample_data(E1_E2_forcomparison_samples_foodballs)$Exp_Location)
+
+#pairwise.wilcox.test
+pairwise.wilcox.test(rich_E1_E2$Shannon, sample_data(E1_E2_forcomparison_samples_foodballs)$Experiment)
+pairwise.wilcox.test(rich_E1_E2$Shannon, sample_data(E1_E2_forcomparison_samples_foodballs)$Location)
+pairwise.wilcox.test(rich_E1_E2$Shannon, sample_data(E1_E2_forcomparison_samples_foodballs)$Percent_Protein)
+pairwise.wilcox.test(rich_E1_E2$Shannon, sample_data(E1_E2_forcomparison_samples_foodballs)$Exp_Location)
+  
+
+#non-parametric test, the Wilcoxon rank-sum test (Mann-Whitney)
+#E1_E2 Non-Parametric diversity stats
+rich_E1_E2 = estimate_richness(E1_E2_forcomparison_samples_foodballs)
+rich_E1_E2
+#Kruskal
+kruskal.test(rich_E1_E2$Shannon ~ sample_data(E1_E2_forcomparison_samples_foodballs)$Experiment)
+kruskal.test(rich_E1_E2$Shannon ~ sample_data(E1_E2_forcomparison_samples_foodballs)$Location)
+kruskal.test(rich_E1_E2$Shannon ~ sample_data(E1_E2_forcomparison_samples_foodballs)$Percent_Protein)
+kruskal.test(rich_E1_E2$Shannon ~ sample_data(E1_E2_forcomparison_samples_foodballs)$Exp_Location)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+#Beta Diversity Statistics
+##PCoA and PERMANOVA - gives us statistical significance and loadings for the axes - adonis function
+#PCoA
+http://joey711.github.io/phyloseq/plot_ordination-examples
+
+PCoA represents samples in terms of distance based on community species composition dissimilarities. The input is your phyloseq object and a distance matrix made from your OTU table. The "best" method to use is often a weighted Unifrac distance matrix, but Bray-Curtis matrices are also very normal and they look better for these data, so. Also, unifrac weighted needs a phylotree in the phykoseq object. 
+
+A PCoA is a good summary figure to talk about broad patterns in community composition in the dataset. The PERMANOVAs provide support for whether or not a visible pattern in the PCoA is statistically significant. For this first PCoA, the takeaway is that Colon and Cecum samples were quite similar, while ileum and duod samples were similar. Also, the samples separated by season along Axis 1, which explained 11% of the variation in community composition (11% is not very high but is also not terrible. Amazing would be like 30 or even 50%.)
+
+## PERMANOVAs using adonis function
+https://rdrr.io/rforge/vegan/man/adonis.html
+PERMANOVA is complementary to the PCoAs above. We use them to test for significant differences in community composition between different categories of samples.
+#https://www.youtube.com/watch?v=1ETBgbXl-BM&list=PLmNrK_nkqBpIIRdQTS2aOs5OD7vVMKWAi&index=5
+
+#Beta Diversity Plot PCoA for E1 vs E2 used in manuscript
+```{r}
+set.seed(19930831)
+permutations <- 100000 #while we are testing stuff out keep it at 1000 to make things go faster, for more precision up it to 10,000. 
+
+#E1_E2: plot just by experiment 
+E1_E2.ord = ordinate(E1_E2_forcomparison, "PCoA", "bray", weighted=TRUE)                     ###Ordinate phyloseq object
+E1_E2.ordplot = plot_ordination(E1_E2_forcomparison, E1_E2.ord, color="Treatment") +
+  geom_point(size=7) + 
+  scale_colour_manual(values=c("#969696", "#cccccc")) +
+  labs(title = "Synthetic vs Semi-natural")+ ### Make plot
+theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    title =element_text(size=22, face='bold'),
+    axis.text.x = element_text(color="black", size=16),
+    axis.text.y = element_text(color="black", size=16),
+    strip.text.y = element_text(color="black", size=16),
+    legend.title = element_text(color="black", size=22),
+    legend.text = element_text(color="black", size=16),
+    legend.position = "bottom",
+    strip.text = element_text(size = 20),
+    axis.title.x = element_text(color="black", size=22),
+    axis.title.y = element_text(color="black", size=22, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/Beta Diversity/Synthetic vs Natural (BRAY) Beta Diversity Experimental Comparison.pdf", height = 10, width =12)
+E1_E2.ordplot
+dev.off()
+```
+
+#Bray-Curtis dissimilarity creates a matrix in function of the how much the samples are different
+```{r}
+set.seed(19930831)
+permutations <- 100000 #while we are testing stuff out keep it at 1000 to make things go faster, for more precision up it to 10,000. 
+
+#E1+E2 comparison Adonis
+#Calculate Bray-Curtis distance matrix
+E1_E2_bray <- phyloseq::distance(E1_E2_forcomparison, method = "bray")    
+adonisdf <- data.frame(sample_data(E1_E2_forcomparison)) ####put data in format that is compatible with adonis function in vegan package.
+E1_E2_test <- adonis2(E1_E2_bray ~ Experiment, data = adonisdf, permutations = permutations)
+E1_E2_test #visualize results
+E1_E2_results <- as.data.frame(E1_E2_test$aov.tab) #convert anova table to a data frame
+write.csv(E1_E2_results, "/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/Beta Diversity/Adonis_Results/E1_E2_Comparison_Adonis.csv")
+
+```
+
+
+
+#PCoA and Adonis for just E1
+```{r}
+set.seed(19930831)
+permutations <- 10000 #while we are testing stuff out keep it at 1000 to make things go faster, for more precision up it to 10,000. 
+
+
+#PCOA E1 overall
+E1.ord = ordinate(E1_forcomparison, "PCoA", "bray", weighted=TRUE)                     ###Ordinate phyloseq object
+E1.ordplot = plot_ordination(E1_forcomparison, E1.ord, color="Location", shape = "Percent_Protein") +
+  geom_point(size=7) + 
+  LocationColors+
+  labs(title = "Synthetic Diet")+ ### Make plot
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    title =element_text(size=22, face='bold'),
+    axis.text.x = element_text(color="black", size=16),
+    axis.text.y = element_text(color="black", size=16),
+    strip.text.y = element_text(color="black", size=16),
+    legend.title = element_text(color="black", size=22),
+    legend.text = element_text(color="black", size=16),
+    legend.position = "bottom",
+    strip.text = element_text(size = 20),
+    axis.title.x = element_text(color="black", size=22),
+    axis.title.y = element_text(color="black", size=22, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/Beta Diversity/Synthetic_Diet_PCoA.pdf", height = 10, width =12)
+E1.ordplot
+dev.off()
+
+#E1 comparison Adonis
+#Calculate Bray-Curtis distance matrix
+E1_bray <- phyloseq::distance(E1_forcomparison, method = "bray")    
+adonisdf <- data.frame(sample_data(E1_forcomparison)) ####put data in format that is compatible with adonis function in vegan package.
+E1_test <- adonis2(E1_bray ~ Percent_Protein*Location*Sex*Breeding.Pair, data = adonisdf, permutations = permutations)
+E1_test #visualize results
+#E1_results <- as.data.frame(E1_test$aov.tab) #convert anova table to a data frame
+#write.csv(E1_results, "/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps/Adonis/E1_Adonis.csv")
+
+#PCOA E1 by just diet
+E1.ord = ordinate(E1_forcomparison, "PCoA", "bray", weighted=TRUE)                     ###Ordinate phyloseq object
+E1.ordplot = plot_ordination(E1_forcomparison, E1.ord, color="Percent_Protein") +
+  geom_point(size=7) + 
+  scale_colour_brewer(palette = "Dark2")+
+  labs(title = "Synthetic Diet Beta Diversity") ### Make plot
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps/New Colors/Synthetic Diet PCoA_Percent Protein.pdf", height = 10, width =11)
+E1.ordplot
+dev.off()
+
+#PCOA E1 by just location
+E1.ord = ordinate(E1_forcomparison, "PCoA", "bray", weighted=TRUE)                     ###Ordinate phyloseq object
+E1.ordplot = plot_ordination(E1_forcomparison, E1.ord, color="Location") +
+  geom_point(size=7) + 
+  LocationColors+
+  labs(title = "Synthetic Diet Beta Diversity") ### Make plot
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps/New Colors/Synthetic Diet PCoA_Location.pdf", height = 10, width =11)
+E1.ordplot
+dev.off()
+```
+
+#PCoA and Adonis for just E2
+```{r}
+set.seed(19930831)
+permutations <- 10000 #while we are testing stuff out keep it at 1000 to make things go faster, for more precision up it to 10,000. 
+
+#PCOA E2 overall
+E2.ord = ordinate(E2_ps, "PCoA", "bray", weighted=TRUE)                     ###Ordinate phyloseq object
+E2.ordplot = plot_ordination(E2_ps, E2.ord, color="Location", shape = "Percent_Protein") +
+  geom_point(size=7) + 
+  LocationColors +
+  labs(title = "Semi-Natural Diet")+ ### Make plot
+theme_bw() +
+  theme(
+  plot.title = element_text(hjust = 0.5),
+    title =element_text(size=22, face='bold'),
+    axis.text.x = element_text(color="black", size=16),
+    axis.text.y = element_text(color="black", size=16),
+    strip.text.y = element_text(color="black", size=16),
+    legend.title = element_text(color="black", size=22),
+    legend.text = element_text(color="black", size=16),
+    legend.position = "bottom",
+    strip.text = element_text(size = 20),
+    axis.title.x = element_text(color="black", size=22),
+    axis.title.y = element_text(color="black", size=22, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/Beta Diversity/Natural Diet PCoA.pdf", height = 10, width =12)
+E2.ordplot
+dev.off()
+
+#E2 comparison Adonis
+#Calculate Bray-Curtis distance matrix
+E2_bray <- phyloseq::distance(E2_ps, method = "bray")    
+adonisdf <- data.frame(sample_data(E2_ps)) ####put data in format that is compatible with adonis function in vegan package.
+E2_test <- adonis2(E2_bray ~ Percent_Protein*Location*Sex*Breeding.Pair, data = adonisdf, permutations = permutations)
+E2_test #visualize results
+#E2_results <- as.data.frame(E2_test$aov.tab) #convert anova table to a data frame
+#write.csv(E2_results, "/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps/Adonis/E2_Adonis.csv")
+
+
+#PCoA E2 by just diet
+E2.ord = ordinate(E2_ps, "PCoA", "bray", weighted=TRUE)                     ###Ordinate phyloseq object
+E2.ordplot = plot_ordination(E2_ps, E2.ord, color="Percent_Protein") +
+  geom_point(size=7) + 
+  scale_colour_brewer(palette = "Dark2")+
+  labs(title = "Semi- Natural Diet Beta Diversity")### Make plot
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps/New Colors/PCOA/Natural Diet PCoA_Percent Protein.pdf", height = 10, width =11)
+E2.ordplot
+dev.off()
+
+#PCoA E2 by just Location
+E2.ord = ordinate(E2_ps, "PCoA", "bray", weighted=TRUE)                     ###Ordinate phyloseq object
+E2.ordplot = plot_ordination(E2_ps, E2.ord, color="Location") +
+  geom_point(size=7) + 
+  LocationColors+
+  labs(title = "Semi- Natural Diet Beta Diversity")### Make plot
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_rare8000_sylva138_plots_comps/New Colors/PCOA/Natural Diet PCoA_Location.pdf", height = 10, width =11)
+E2.ordplot
+dev.off()
+
+
+```
+
+#PCoA including Foodballs
+```{r}
+set.seed(19930831)
+permutations <- 10000 #while we are testing stuff out keep it at 1000 to make things go faster, for more precision up it to 10,000. 
+
+
+#PCOA E1 overall with food ball
+E1.ord = ordinate(E1_forcomparison_samples_foodballs, "PCoA", "bray", weighted=TRUE)                     ###Ordinate phyloseq object
+E1.ordplot = plot_ordination(E1_forcomparison_samples_foodballs, E1.ord, color="Location", shape = "Percent_Protein") +
+  geom_point(size=7) + 
+  LocationColors+
+  labs(title = "Synthetic Diet")+ ### Make plot
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    title =element_text(size=22, face='bold'),
+    axis.text.x = element_text(color="black", size=16),
+    axis.text.y = element_text(color="black", size=16),
+    strip.text.y = element_text(color="black", size=16),
+    legend.title = element_text(color="black", size=22),
+    legend.text = element_text(color="black", size=16),
+    legend.position = "bottom",
+    strip.text = element_text(size = 20),
+    axis.title.x = element_text(color="black", size=22),
+    axis.title.y = element_text(color="black", size=22, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/Beta Diversity/Foodball_Synthetic_PCoA.pdf", height = 10, width =13)
+E1.ordplot
+#dev.off()
+
+#Mouse food E1 comparison Adonis
+#Calculate Bray-Curtis distance matrix
+E1_bray <- phyloseq::distance(E1_forcomparison_samples_foodballs, method = "bray")    
+adonisdf <- data.frame(sample_data(E1_forcomparison_samples_foodballs)) ####put data in format that is compatible with adonis function in vegan package.
+E1_test <- adonis2(E1_bray ~ Percent_Protein*Location, data = adonisdf, permutations = permutations)
+E1_test #visualize results
+
+
+```
+
+```{r}
+#PCOA E2 overall with food ball
+E2.ord = ordinate(E2_forcomparison_samples_foodballs, "PCoA", "bray", weighted=TRUE)                     ###Ordinate phyloseq object
+E2.ordplot = plot_ordination(E2_forcomparison_samples_foodballs, E2.ord, color="Location", shape = "Percent_Protein") +
+  geom_point(size=7) + 
+  LocationColors+
+  labs(title = "Semi-Natural Diet")+ ### Make plot
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    title =element_text(size=22, face='bold'),
+    axis.text.x = element_text(color="black", size=16),
+    axis.text.y = element_text(color="black", size=16),
+    strip.text.y = element_text(color="black", size=16),
+    legend.title = element_text(color="black", size=22),
+    legend.text = element_text(color="black", size=16),
+    legend.position = "bottom",
+    strip.text = element_text(size = 20),
+    axis.title.x = element_text(color="black", size=22),
+    axis.title.y = element_text(color="black", size=22, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/Beta Diversity/FoodBall_SemiNat_PCoA.pdf", height = 10, width =13)
+E2.ordplot
+dev.off()
+
+#Mouse food E1 comparison Adonis
+#Calculate Bray-Curtis distance matrix
+E2_bray <- phyloseq::distance(E2_forcomparison_samples_foodballs, method = "bray")    
+adonisdf <- data.frame(sample_data(E2_forcomparison_samples_foodballs)) ####put data in format that is compatible with adonis function in vegan package.
+E2_test <- adonis2(E2_bray ~ Percent_Protein*Location, data = adonisdf, permutations = permutations)
+E2_test #visualize results
+```
+
+
+
+
+
+
+
+#Relative Abundance Plots
+#Get relative proportions by Phyla - per sample - including all phyla
+```{r}
+#E1_E2_comparison
+ps.prop <- transform_sample_counts(E1_E2_forcomparison, (function(x) {x/sum(x)}))
+phylaglom <- tax_glom(ps.prop, "Phylum", NArm = FALSE)
+glomtable <- psmelt(phylaglom)
+glomtable[is.na(glomtable)] <- "Unclassified" #This line of code ensures I keep Phyla with an "NA"
+#write.csv(glomtable, "/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_forcomparison16SRelPhylaBySamp.csv")
+
+```
+
+#Filter out Phyla that account for less than 1% by relative abundance
+```{r}
+ps.prop <- transform_sample_counts(E1_E2_forcomparison, (function(x) {x/sum(x)}))
+phylaglom <- tax_glom(ps.prop, "Phylum", NArm = FALSE)
+glomtable <- psmelt(phylaglom)
+glomtable[is.na(glomtable)] <- "Unclassified" #This line of code ensures I keep Phyla with an "NA"
+RelPhylaAbove1 <- filter(glomtable, Abundance > 0.01)
+#write.csv(RelPhylaAbove1, "/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_forcomparison16SRelPhylaAbove1BySamp.csv")
+```
+
+#For relative Abundance figures
+```{r}
+#For taxonomic figures - filter out Phyla that are less than 1% relative abundance in entire data set, not just per sample. 
+#https://github.com/joey711/phyloseq/issues/494
+#For taxonomic figures - filter out Phyla that account for less than 1% by relative abundance per sample
+E1_E2_phyla_ab1 <- E1_E2_forcomparison %>%
+  tax_glom(taxrank = "Phylum", NArm = FALSE) %>%        # Agglomerate at Phyla level and KEEP unclassified Phyla
+  transform_sample_counts(function(x) {x/sum(x)}) %>%   # Transform to relative abundance
+  psmelt() %>%                                          # Melt to long format
+  filter(Abundance > 0.01)                              # Filter out low abundance taxa (less than 1% relative abundance)
+#write.csv(E1_E2_phyla_ab1, "/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_FORCOMP_16SRelPhylaAbove1BySamp.csv")
+```
+
+#Relative abundance subsets for E1_E2
+```{r}
+#E1_E2_duod
+#For taxonomic figures - filter out Phyla that account for less than 1% by relative abundance per sample
+E1_E2_duod_phyla_ab1 <- E1_E2_duodenum %>%
+  tax_glom(taxrank = "Phylum", NArm = FALSE) %>%        # Agglomerate at Phyla level and KEEP unclassified Phyla
+  transform_sample_counts(function(x) {x/sum(x)}) %>%   # Transform to relative abundance
+  psmelt() %>%                                          # Melt to long format
+  filter(Abundance > 0.01)                              # Filter out low abundance taxa (less than 1% relative abundance)
+
+E1_E2_duod_relAb <- ggplot(E1_E2_duod_phyla_ab1, aes(x = Mouse_number, y = Abundance*100, fill = Phylum)) +
+  guides(fill = guide_legend(title.position = "top")) +
+  labs(x = "Individual", y = "Relative Abundance (Phyla > 1%) ", fill = "Phylum") +
+  labs(title = "Bacterial Phyla in the Duodenum")+
+  facet_wrap(Experiment~Percent_Protein, scale = "free_x") +
+  geom_bar(stat = "identity", position = "fill", ncol= "4") +
+  scale_fill_manual(values = phyColor) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    title =element_text(size=22, face='bold'),
+    axis.text.x = element_text(color="black", size=14, angle = 90),
+    axis.text.y = element_text(color="black", size=16),
+    strip.text.y = element_text(color="black", size=16),
+    legend.title = element_text(color="black", size=22),
+    legend.text = element_text(color="black", size=14),
+    legend.position = "right",
+    strip.text = element_text(size = 20),
+    axis.title.x = element_text(color="black", size=22),
+    axis.title.y = element_text(color="black", size=22, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+E1_E2_duod_relAb
+
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Relative Abundance Plots/E1_E2_Duod_PhylaRelPhylaAbove1.pdf", height = 15, width =13)
+E1_E2_duod_relAb
+dev.off()
+```
+
+```{r}
+#E1_E2_ileum
+#For taxonomic figures - filter out Phyla that account for less than 1% by relative abundance per sample
+E1_E2_ileum_phyla_ab1 <- E1_E2_ileum %>%
+  tax_glom(taxrank = "Phylum", NArm = FALSE) %>%        # Agglomerate at Phyla level and KEEP unclassified Phyla
+  transform_sample_counts(function(x) {x/sum(x)}) %>%   # Transform to relative abundance
+  psmelt() %>%                                          # Melt to long format
+  filter(Abundance > 0.01)                              # Filter out low abundance taxa (less than 1% relative abundance)
+
+E1_E2_ileum_relAb <- ggplot(E1_E2_ileum_phyla_ab1, aes(x = Mouse_number, y = Abundance*100, fill = Phylum)) +
+  guides(fill = guide_legend(title.position = "top")) +
+  labs(x = "Animal ID", y = "Relative Abundance (Phyla > 1%) ", fill = "Phylum") +
+  labs(title = "Bacterial Phyla in the Ileum")+
+  facet_wrap(Experiment~Percent_Protein, scale = "free_x") +
+  geom_bar(stat = "identity", position = "fill", ncol= "4") +
+  scale_fill_manual(values = phyColor) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    title =element_text(size=22, face='bold'),
+    axis.text.x = element_text(color="black", size=14, angle = 90),
+    axis.text.y = element_text(color="black", size=16),
+    strip.text.y = element_text(color="black", size=16),
+    legend.title = element_text(color="black", size=22),
+    legend.text = element_text(color="black", size=14),
+    legend.position = "right",
+    strip.text = element_text(size = 20),
+    axis.title.x = element_text(color="black", size=22),
+    axis.title.y = element_text(color="black", size=22, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+E1_E2_ileum_relAb
+
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Relative Abundance Plots/E1_E2_ileum_PhylaRelPhylaAbove1.pdf", height = 15, width =13)
+E1_E2_ileum_relAb
+dev.off()
+```
+
+
+```{r}
+#E1_E2_Cecum
+#For taxonomic figures - filter out Phyla that account for less than 1% by relative abundance per sample
+E1_E2_cecum_phyla_ab1 <- E1_E2_cecum %>%
+  tax_glom(taxrank = "Phylum", NArm = FALSE) %>%        # Agglomerate at Phyla level and KEEP unclassified Phyla
+  transform_sample_counts(function(x) {x/sum(x)}) %>%   # Transform to relative abundance
+  psmelt() %>%                                          # Melt to long format
+  filter(Abundance > 0.01)                              # Filter out low abundance taxa (less than 1% relative abundance)
+
+E1_E2_cecum_relAb <- ggplot(E1_E2_cecum_phyla_ab1, aes(x = Mouse_number, y = Abundance*100, fill = Phylum)) +
+  guides(fill = guide_legend(title.position = "top")) +
+  labs(x = "Animal ID", y = "Relative Abundance (Phyla > 1%) ", fill = "Phylum") +
+  labs(title = "Bacterial Phyla in the Cecum")+
+  facet_wrap(Experiment~Percent_Protein, scale = "free_x") +
+  geom_bar(stat = "identity", position = "fill", ncol= "4") +
+  scale_fill_manual(values = phyColor) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    title =element_text(size=22, face='bold'),
+    axis.text.x = element_text(color="black", size=14, angle = 90),
+    axis.text.y = element_text(color="black", size=16),
+    strip.text.y = element_text(color="black", size=16),
+    legend.title = element_text(color="black", size=22),
+    legend.text = element_text(color="black", size=16),
+    legend.position = "right",
+    strip.text = element_text(size = 20),
+    axis.title.x = element_text(color="black", size=22),
+    axis.title.y = element_text(color="black", size=22, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+E1_E2_cecum_relAb
+
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/Documents/Conner Documents/UNM biology/Chapter 1 E1 vs E2/Relative Abundance Plots/E1_E2_cecum_PhylaRelPhylaAbove1.pdf", height = 15, width =13)
+E1_E2_cecum_relAb
+dev.off()
+```
+
+#Overall Relative Abundance Plot used in Manuscript (Supplemental figure)
+```{r}
+#E1_E2_samples, by location and percent protein
+#For taxonomic figures - filter out Phyla that account for less than 1% by relative abundance per sample
+E1_E2_phyla_ab1 <- E1_E2_forcomparison %>%
+  tax_glom(taxrank = "Phylum", NArm = FALSE) %>%        # Agglomerate at Phyla level and KEEP unclassified Phyla
+  transform_sample_counts(function(x) {x/sum(x)}) %>%   # Transform to relative abundance
+  psmelt() %>%                                          # Melt to long format
+  filter(Abundance > 0.01)                              # Filter out low abundance taxa (less than 1% relative abundance)
+
+E1_E2_relAb <- ggplot(E1_E2_phyla_ab1, aes(x = Mouse_number, y = Abundance*100, fill = Phylum)) +
+  guides(fill = guide_legend(title.position = "top")) +
+  labs(x = "Animal ID", y = "Relative Abundance (Phyla > 1%) ", fill = "Phylum") +
+  labs(title = "Bacterial Phyla")+
+  facet_wrap(Experiment~Location+Percent_Protein, scale = "free_x",  nrow= 2 , ncol= 9) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_fill_manual(values = phyColor) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    title =element_text(size=22, face='bold'),
+    axis.text.x = element_text(color="black", size=12, angle = 90, hjust = 1),
+    axis.text.y = element_text(color="black", size=16),
+    strip.text.y = element_text(color="black", size=16),
+    legend.title = element_text(color="black", size=22),
+    legend.text = element_text(color="black", size=16),
+    legend.position = "right",
+    strip.text = element_text(size = 20),
+    axis.title.x = element_text(color="black", size=22),
+    axis.title.y = element_text(color="black", size=22, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/BoxplotsANDScatter_RelAbundance/E1_E2_PhylaRelPhylaAbove1.pdf", height = 15, width = 24)
+E1_E2_relAb
+dev.off()
+```
+
+
+Relative Abundance of Food balls
+```{r}
+#Food Ball Diversity
+#For taxonomic figures - filter out Phyla that account for less than 1% by relative abundance per sample
+E1_E2_foodballs_ab1 <- E1_E2_foodballs %>%
+  tax_glom(taxrank = "Phylum", NArm = FALSE) %>%        # Agglomerate at Phyla level and KEEP unclassified Phyla
+  transform_sample_counts(function(x) {x/sum(x)}) %>%   # Transform to relative abundance
+  psmelt() %>%                                          # Melt to long format
+  filter(Abundance > 0.01)                              # Filter out low abundance taxa (less than 1% relative abundance)
+
+E1_E2_Foodball_relAb <- ggplot(E1_E2_foodballs_ab1, aes(x = Experiment, y = Abundance*100, fill = Phylum)) +
+  guides(fill = guide_legend(title.position = "top")) +
+  labs(x = "Treatment", y = "Relative Abundance (Phyla > 1%) ", fill = "Phylum") +
+  labs(title = "Bacterial Phyla in the Food")+
+  #facet_wrap(~Treatment, scale = "free_x") +
+  geom_bar(stat = "identity", position = "fill", ncol= "4") +
+  scale_fill_manual(values = phyColor) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    title =element_text(size=22, face='bold'),
+    axis.text.x = element_text(color="black", size=14, angle = 90),
+    axis.text.y = element_text(color="black", size=16),
+    strip.text.y = element_text(color="black", size=16),
+    legend.title = element_text(color="black", size=26),
+    legend.text = element_text(color="black", size=24),
+    legend.position = "right",
+    strip.text = element_text(size = 20),
+    axis.title.x = element_text(color="black", size=22),
+    axis.title.y = element_text(color="black", size=22, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+E1_E2_Foodball_relAb
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/BoxplotsANDScatter_RelAbundance/Foodball_E1_E2_PhylaRelPhylaAbove1.pdf", height = 20, width = 12)
+E1_E2_Foodball_relAb
+dev.off()
+```
+
+
