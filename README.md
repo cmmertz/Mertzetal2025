@@ -15,6 +15,6 @@
 
 **MetagenomicsProcessingPipeline** Code detailing pipeline used for metagenomic data processing and analysis of cecum samples sequenced at 7 million reads. Inputs are raw fastq files, output include assembled MAGs and their resulting proteomes.
 
-**MAGS_SankeyDataVisualization** This script details how to make a phyloseq object from metagenomic processing pipeline output and includes code on how to visualize data using Sankey diagrams.
+**MAGS_SankeyDataVisualization.Rmd** This script details how to make a phyloseq object from metagenomic processing pipeline output and includes code on how to visualize data using Sankey diagrams.
 
 **MAGS_ANCOMBC2.Rmd** Script for differential abundance analyses identifying bacterial families associated with different diets and protein treatments in Metagenomic-assembled microbial genomes from the cecal contents of mice using ANCOM-BC2.
