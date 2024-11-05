@@ -1,0 +1,235 @@
+---
+title: "d13C_STATS"
+author: "Conner Mertz"
+date: "2023-09-05"
+output: html_document
+---
+
+This code tests for significant differences in measured d13C AA data. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# start by loading the necessary libraries
+library(MASS)
+library(stats)
+library(car)
+library(ellipse)
+library(ggplot2)
+library(ggnewscale)
+library(tidyr)
+library(ggplot2)
+
+```
+
+
+Read in your data
+```{r}
+# read in your data!
+meta <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/SIA/E1_E2_d13C Data/STATS/d13C_E1_E2_muscleCricketCornmeal_STATS_import.csv")
+
+#make column names SampleID, Val13C, Leu13C..ect,and include any other meta data you want. For me that was Experiment # (E1 or E2), Percent_Protein (2.5P,5P or 10P), ect.. 
+
+```
+
+```{r}
+# subsetting our data by creating separate dataframes
+
+Muscle_Diet.ess <- subset(meta, select = c("SampleID","Type", "Experiment_Percent_Protein", "Treatment", "Percent_Protein", "Val13C","Leu13C", "Ile13C",	"Phe13C",	"Thr13C", "Lys13C"))
+
+
+E1_.ess <- subset(Muscle_Diet.ess, Treatment == "Synthetic")
+E2_.ess <- subset(Muscle_Diet.ess, Treatment == "Semi_Natural")
+
+
+```
+
+
+Lets do some statistical tests! Remember: 
+ 
+-	 T-test (For 2 groups, compare means using t-tests (if data are Normally distributed, parametric test), or Mann-Whitney U test (For 2 groups, if data are not normally distributed, non parametric test) 
+-	ANOVAs (for greater than 2 groups, normally distributed data, parametric test), or Kruskal-Wallis ANOVA+Wilcox Rank Sum test (for greater than 2 groups, not normally distributed data, non parametric test).
+
+**Important Caveot** 
+It is ok to use non- parametric tests on normally distributed data!  
+
+##Test for differences in E1 casein vs E1 AAESS muscle values:
+####################
+1. Test for normality
+```{r}
+# test for normality (p-values above 0.05 indicate normality)
+#"Val13C","Leu13C", "Ile13C",	"Phe13C",	"Thr13C", "Lys13C"
+shapiro.test(E1_.ess$Val13C)
+shapiro.test(E1_.ess$Leu13C)
+shapiro.test(E1_.ess$Ile13C)
+shapiro.test(E1_.ess$Phe13C)
+shapiro.test(E1_.ess$Thr13C)
+shapiro.test(E1_.ess$Lys13C)
+
+```
+None of these are normally distributed so we need to perform a -	Perform Kruskal-Wallis ANOVA+Wilcox Rank Sum test (for greater than 2 groups, not normally distributed data): 
+
+#non-parametric tests for all AAESS
+```{r}
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Ile <- kruskal.test(E1_.ess$Ile13C ~ E1_.ess$Experiment_Percent_Protein, data = E1_.ess) #determines whether there is a difference in d13CIle in E1 among Percent Protein diets
+Ile
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(E1_.ess$Ile13C, E1_.ess$Experiment_Percent_Protein,
+                 p.adjust.method = "BH")
+
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Leu <- kruskal.test(E1_.ess$Leu13C ~ E1_.ess$Experiment_Percent_Protein, data = E1_.ess) #determines whether there is a difference in d13CLeu in E1 among Percent Protein diets
+Leu
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(E1_.ess$Leu13C, E1_.ess$Experiment_Percent_Protein,
+                 p.adjust.method = "BH")
+
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Val <- kruskal.test(E1_.ess$Val13C ~ E1_.ess$Experiment_Percent_Protein, data = E1_.ess) #determines whether there is a difference in d13CVal in E1 among Percent Protein diets
+Val
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(E1_.ess$Val13C, E1_.ess$Experiment_Percent_Protein,
+                 p.adjust.method = "BH")
+
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Phe <- kruskal.test(E1_.ess$Phe13C ~ E1_.ess$Experiment_Percent_Protein, data = E1_.ess) #determines whether there is a difference in d13CPhe in E1 among Percent Protein diets
+Phe
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(E1_.ess$Phe13C, E1_.ess$Experiment_Percent_Protein,
+                 p.adjust.method = "BH")
+
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Thr <- kruskal.test(E1_.ess$Thr13C ~ E1_.ess$Experiment_Percent_Protein, data = E1_.ess) #determines whether there is a difference in d13CThr in E1 among Percent Protein diets
+Thr
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(E1_.ess$Thr13C, E1_.ess$Experiment_Percent_Protein,
+                 p.adjust.method = "BH")
+
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Lys <- kruskal.test(E1_.ess$Lys13C ~ E1_.ess$Experiment_Percent_Protein, data = E1_.ess) #determines whether there is a difference in d13CLys in E1 among Percent Protein diets
+Lys
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(E1_.ess$Lys13C, E1_.ess$Experiment_Percent_Protein,
+                 p.adjust.method = "BH")
+
+
+```
+
+
+
+###Now lets look for differences in just E2:
+1.	Test for normality (Shapiro-Wilk normality test) d13C essential AA of muscle E2. (p value above 0.05 indicate normality):
+
+```{r}
+# test for normality (p-values above 0.05 indicate normality)
+#"Val13C","Leu13C", "Ile13C",	"Phe13C",	"Thr13C", "Lys13C"
+shapiro.test(E2_.ess$Val13C)
+shapiro.test(E2_.ess$Leu13C)
+shapiro.test(E2_.ess$Ile13C)
+shapiro.test(E2_.ess$Phe13C)
+shapiro.test(E2_.ess$Thr13C)
+shapiro.test(E2_.ess$Lys13C)
+
+
+```
+
+Only a few of these are normally distributed so we need to Perform Kruskal-Wallis ANOVA+Wilcox Rank Sum test (for greater than 2 groups, not normally distributed data): 
+
+#non-parametric tests for all AAESS
+```{r}
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Ile <- kruskal.test(E2_.ess$Ile13C ~ E2_.ess$Percent_Protein, data = E2_.ess) #determines whether there is a difference in d13CIle in E2 among Percent Protein diets
+Ile
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(E2_.ess$Ile13C, E2_.ess$Percent_Protein,
+                     p.adjust.method = "BH")
+
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Leu <- kruskal.test(E2_.ess$Leu13C ~ E2_.ess$Percent_Protein, data = E2_.ess) #determines whether there is a difference in d13CLeu in E2 among Percent Protein diets
+Leu
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(E2_.ess$Leu13C, E2_.ess$Percent_Protein,
+                     p.adjust.method = "BH")
+
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Val <- kruskal.test(E2_.ess$Val13C ~ E2_.ess$Percent_Protein, data = E2_.ess) #determines whether there is a difference in d13CVal in E2 among Percent Protein diets
+Val
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(E2_.ess$Val13C, E2_.ess$Percent_Protein,
+                     p.adjust.method = "BH")
+
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Phe <- kruskal.test(E2_.ess$Phe13C ~ E2_.ess$Percent_Protein, data = E2_.ess) #determines whether there is a difference in d13CPhe in E2 among Percent Protein diets
+Phe
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(E2_.ess$Phe13C, E2_.ess$Percent_Protein,
+                     p.adjust.method = "BH")
+
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Thr <- kruskal.test(E2_.ess$Thr13C ~ E2_.ess$Percent_Protein, data = E2_.ess) #determines whether there is a difference in d13CThr in E2 among Percent Protein diets
+Thr
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(E2_.ess$Thr13C, E2_.ess$Percent_Protein,
+                     p.adjust.method = "BH")
+
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Lys <- kruskal.test(E2_.ess$Lys13C ~ E2_.ess$Percent_Protein, data = E2_.ess) #determines whether there is a difference in d13CLys in E2 among Percent Protein diets
+Lys
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(E2_.ess$Lys13C, E2_.ess$Percent_Protein,
+                     p.adjust.method = "BH")
+
+
+```
+
+
+
+```{r}
+
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Ile <- kruskal.test(E2_.ess$Ile13C ~ E2_.ess$Type, data = E2_.ess) #determines whether there is a difference in d13CIle in E2 among Percent Protein diets
+Ile
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(E2_.ess$Ile13C, E2_.ess$Type,
+                     p.adjust.method = "BH")
+
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Leu <- kruskal.test(E2_.ess$Leu13C ~ E2_.ess$Type, data = E2_.ess) #determines whether there is a difference in d13CLeu in E2 among Percent Protein diets
+Leu
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(E2_.ess$Leu13C, E2_.ess$Type,
+                     p.adjust.method = "BH")
+
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Val <- kruskal.test(E2_.ess$Val13C ~ E2_.ess$Type, data = E2_.ess) #determines whether there is a difference in d13CVal in E2 among Percent Protein diets
+Val
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(E2_.ess$Val13C, E2_.ess$Type,
+                     p.adjust.method = "BH")
+
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Phe <- kruskal.test(E2_.ess$Phe13C ~ E2_.ess$Type, data = E2_.ess) #determines whether there is a difference in d13CPhe in E2 among Percent Protein diets
+Phe
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(E2_.ess$Phe13C, E2_.ess$Type,
+                     p.adjust.method = "BH")
+
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Thr <- kruskal.test(E2_.ess$Thr13C ~ E2_.ess$Type, data = E2_.ess) #determines whether there is a difference in d13CThr in E2 among Percent Protein diets
+Thr
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(E2_.ess$Thr13C, E2_.ess$Type,
+                     p.adjust.method = "BH")
+
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Lys <- kruskal.test(E2_.ess$Lys13C ~ E2_.ess$Type, data = E2_.ess) #determines whether there is a difference in d13CLys in E2 among Percent Protein diets
+Lys
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(E2_.ess$Lys13C, E2_.ess$Type,
+                     p.adjust.method = "BH")
+
+```
+
