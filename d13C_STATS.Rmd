@@ -232,4 +232,115 @@ pairwise.wilcox.test(E2_.ess$Lys13C, E2_.ess$Type,
                      p.adjust.method = "BH")
 
 ```
+#Now we need to test whether there is statistically significant difference between muscle d13C values and dietary cornmeal+cricket powder. To test for statistical analysis, you can’t just use the mean generated from (meanAAd13C Cricket*Final Relative AA Prop from Crickets)+( meanAAd13C Cornmeal*Final Relative AA Prop from Cornmeal). Instead, you need to input these values individually. So, I generated a value for every cornmeal and cricket powder sample and ran it in every possible combination. Here’s the resulting code:
+
+Read in your data
+```{r}
+# read in your data!
+meta <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/SIA/E1_E2_d13C Data/STATS/d13C_E2_MusclevsCricketandCornmeal_STATS_import.csv") 
+#remove raw cricket and cornmeal values so we can do stats on the combined proportions in the diet. 
+meta <- subset(meta, Protein.type %in% c("Muscle", "Cricket_Cornmeal_indietProp")) 
+
+```
+
+```{r}
+#Lets get the means of  Cricket_Cornmeal_indietProp
+group_by(Protein.type)
+
+CornmealCricketdata <- subset(meta, Protein.type %in% c("Cricket_Cornmeal_indietProp"))
+mean(CornmealCricketdata$Val13C, na.rm = T) # Val13C mean d13C = -24.1, SD= 0.76
+sd(CornmealCricketdata$Val13C, na.rm = T)
+
+mean(CornmealCricketdata$Leu13C, na.rm = T) # Leu13C mean d13C = -27.5, SD= 0.50
+sd(CornmealCricketdata$Leu13C, na.rm = T)
+
+mean(CornmealCricketdata$Ile13C, na.rm = T) # Ile13C mean d13C = -20.7, SD= 0.62
+sd(CornmealCricketdata$Ile13C, na.rm = T)
+
+mean(CornmealCricketdata$Phe13C, na.rm = T) # Phe13C mean d13C = -21.7, SD= 0.70
+sd(CornmealCricketdata$Phe13C, na.rm = T)
+
+mean(CornmealCricketdata$Lys13C, na.rm = T) # Lys13C mean d13C = -19.1, SD= 0.76
+sd(CornmealCricketdata$Lys13C, na.rm = T)
+
+mean(CornmealCricketdata$Thr13C, na.rm = T) # Thr13C mean d13C = -13.2, SD= 0.76
+sd(CornmealCricketdata$Thr13C, na.rm = T)
+```
+
+
+Lets do some statistical tests! Remember: 
+ 
+-	 T-test (For 2 groups, compare means using t-tests (if data are Normally distributed, parametric test), or Mann-Whitney U test (For 2 groups, if data are not normally distributed, non parametric test) 
+-	ANOVAs (for greater than 2 groups, normally distributed data, parametric test), or Kruskal-Wallis ANOVA+Wilcox Rank Sum test (for greater than 2 groups, not normally distributed data, non parametric test).
+
+**Important Caveot** 
+It is ok to use non- parametric tests on normally distributed data!  
+
+
+
+###Now lets look for differences in just E2:
+1.	Test for normality (Shapiro-Wilk normality test) d13C essential AA of muscle E2. (p value above 0.05 indicate normality):
+
+```{r}
+# test for normality (p-values above 0.05 indicate normality)
+#"Val13C","Leu13C", "Ile13C",	"Phe13C",	"Thr13C", "Lys13C"
+shapiro.test(meta$Val13C)
+shapiro.test(meta$Leu13C)
+shapiro.test(meta$Ile13C)
+shapiro.test(meta$Phe13C)
+shapiro.test(meta$Thr13C)
+shapiro.test(meta$Lys13C)
+
+
+```
+
+Only a few of these are normally distributed so we need to Perform Kruskal-Wallis ANOVA+Wilcox Rank Sum test (for greater than 2 groups, not normally distributed data): 
+
+Now lets see if there are significant differences between muscle 2.5P vs cricketpowder+cornmeal, 5P vs cricketpowder+cornmeal, or 10P vs cricketpowder+cornmeal. The cricketpowder+cornmeal value is what was fed into the mixing models, it takes into account the proportion of each AA in cricket powder to cornmeal in the diet and is corrected for digestibility. 
+
+```{r}
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Ile <- kruskal.test(meta$Ile13C ~ meta$Protein_Content, data = meta) #determines whether there is a difference in d13CIle in E1 among Percent Protein diets
+Ile
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(meta$Ile13C, meta$Protein_Content,
+                     p.adjust.method = "BH")
+
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Leu <- kruskal.test(meta$Leu13C ~ meta$Protein_Content, data = meta) #determines whether there is a difference in d13CLeu in E1 among Percent Protein diets
+Leu
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(meta$Leu13C, meta$Protein_Content,
+                     p.adjust.method = "BH")
+
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Val <- kruskal.test(meta$Val13C ~ meta$Protein_Content, data = meta) #determines whether there is a difference in d13CVal in E1 among Percent Protein diets
+Val
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(meta$Val13C, meta$Protein_Content,
+                     p.adjust.method = "BH")
+
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Phe <- kruskal.test(meta$Phe13C ~ meta$Protein_Content, data = meta) #determines whether there is a difference in d13CPhe in E1 among Percent Protein diets
+Phe
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(meta$Phe13C, meta$Protein_Content,
+                     p.adjust.method = "BH")
+
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Thr <- kruskal.test(meta$Thr13C ~ meta$Protein_Content, data = meta) #determines whether there is a difference in d13CThr in E1 among Percent Protein diets
+Thr
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(meta$Thr13C, meta$Protein_Content,
+                     p.adjust.method = "BH")
+
+#Kruskal-Wallis ANOVA+Wilcox Rank Sum test
+Lys <- kruskal.test(meta$Lys13C ~ meta$Protein_Content, data = meta) #determines whether there is a difference in d13CLys in E1 among Percent Protein diets
+Lys
+#follow it up by pairwise comparison to see which groups are diff. 
+pairwise.wilcox.test(meta$Lys13C, meta$Protein_Content,
+                     p.adjust.method = "BH")
+```
+
+
 
