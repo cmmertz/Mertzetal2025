@@ -1402,3 +1402,47 @@ dev.off()
 ```
 
 
+########
+#######
+######
+
+R1 suggests we make these results clearer by emphasizing relative abundance within each gut section. So instead of by mouse_number, I am going to collapse by percent protein.
+
+```{r}
+#E1_E2_samples, by location and percent protein
+#For taxonomic figures - filter out Phyla that account for less than 1% by relative abundance per sample
+E1_E2_phyla_ab1 <- E1_E2_forcomparison %>%
+  tax_glom(taxrank = "Phylum", NArm = FALSE) %>%        # Agglomerate at Phyla level and KEEP unclassified Phyla
+  transform_sample_counts(function(x) {x/sum(x)}) %>%   # Transform to relative abundance
+  psmelt() %>%                                          # Melt to long format
+  filter(Abundance > 0.01)                              # Filter out low abundance taxa (less than 1% relative abundance)
+
+E1_E2_relAb <- ggplot(E1_E2_phyla_ab1, aes(x = Exp_Diet_Location, y = Abundance*100, fill = Phylum)) +
+  guides(fill = guide_legend(title.position = "top")) +
+  labs(x = "Animal ID", y = "Relative Abundance (Phyla > 1%) ", fill = "Phylum") +
+  labs(title = "Bacterial Phyla")+
+  facet_wrap(Experiment~Location+Percent_Protein, scale = "free_x",  nrow= 2 , ncol= 9) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_fill_manual(values = phyColor) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    title =element_text(size=22, face='bold'),
+    axis.text.x = element_text(color="black", size=12, angle = 90, hjust = 1),
+    axis.text.y = element_text(color="black", size=16),
+    strip.text.y = element_text(color="black", size=16),
+    legend.title = element_text(color="black", size=22),
+    legend.text = element_text(color="black", size=16),
+    legend.position = "right",
+    strip.text = element_text(size = 20),
+    axis.title.x = element_text(color="black", size=22),
+    axis.title.y = element_text(color="black", size=22, angle=90),
+    panel.grid.major = element_blank(), # switch off major grid lines
+   panel.grid.minor = element_blank(), # switch off minor grid lines
+    panel.border = element_rect(colour = "black", fill=NA, size=.75)
+  )
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/BoxplotsANDScatter_RelAbundance/E1_E2_PhylaRelPhylaAbove1_collapse.pdf", height = 15, width = 24)
+E1_E2_relAb
+dev.off()
+```
