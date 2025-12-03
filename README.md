@@ -1,12 +1,12 @@
 # Mertzetal2025
-## This respository contains R code associated with "Microbially-derived essential amino acids compensate for dietary deficiencies in deer mice (Peromyscus)"
+## This respository contains R code associated with "Microbially Derived Essential Amino Acids Compensate for Dietary Deficiencies in an Ecologically Relevant Mammalian Host"
 
 
 **16s_processing.R:** Initial processing of bacterial 16s amplicon sequences using DADA2 pipeline. 16S sequence data are deposited in the National Center for Biotechnology Information with the primary accession code PRJNA1108251. Inputs are fastq.gz files from each sequencing run. Output is phyloseq object used in downstream analyses.
 
 **16S_DecontamRarefy.Rmd** This code details how to decontaminate and rarefy 16S microbiome and food data. Input is un-rarefied phyloseq object, output is cleaned and rarefied microbiome phyloseq object.
 
-**16S_DiversityComposition.Rmd** Script for alpha and beta diversity analyses for microbiome and diet data. Includes code for 16S alpha and beta diversity figures, and relative abundance figures.
+**16S_DiversityComposition.Rmd** Script for alpha and beta diversity analyses for microbiome and diet data. Includes code for 16S alpha and beta diversity figures, and relative abundance figures. Code for Random Forest Analysis is also included.
 
 **16S_ANCOMBC2.Rmd** Script for differential abundance analyses identifying ASVs associated with different diets, protein treatments, and gut sections using ANCOM-BC2.
 
