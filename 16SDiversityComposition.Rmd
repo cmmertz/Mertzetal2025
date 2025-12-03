@@ -4,7 +4,7 @@ author: "Conner Mertz"
 date: "2023-06-30"
 output: html_document
 ---
-Script for alpha and beta diversity analyses for microbiome and diet data. Includes code for 16S alpha and beta diversity figures, and overall relative abundance figure. 
+Script for alpha and beta diversity analyses for microbiome and diet data. Includes code for 16S alpha and beta diversity figures, and overall relative abundance figure. Code for Random Forest Analysis is also included. 
 
 Please note: In the following code, Experiment 1 (E1) refers to animals fed the synthetic diet, while Experiment 2 (E2) refers to those fed the semi-natural diet.
 
@@ -81,9 +81,11 @@ theme_set(theme_bw()) #sets ggplot theme
 #read in ps objects
 ```{r}
 ps_raw <- readRDS("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/DADA2_output/clean_ps.rds") #raw but with choloro,mito, low reads (less than 2000), and sample duplicates removed
+ps_raw <- subset_samples(ps_raw, Days_in_study > 95) #keep only mice in study past 95 days
 ps_all <- readRDS("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/RarefyOutput/ps_rare.rds") #this is my phyloseq object I will be using for the majority of my analysis. It contains all samples from E1 and E2 (duplicates not included) and has been rarefied at lib size of 8000.
-sample_data(ps_raw) <- Meta #If you beed to update your meta sheet, this is how to do it without dunning dada2 again to create a whole new ps
-sample_data(ps_all) <- Meta #If you beed to update your meta sheet, this is how to do it without dunning dada2 again to create a whole new ps
+ps_all <- subset_samples(ps_all, Days_in_study > 95) #keep only mice in study past 95 days
+sample_data(ps_raw) <- Meta #If you need to update your meta sheet, this is how to do it without dunning dada2 again to create a whole new ps
+sample_data(ps_all) <- Meta #If you need to update your meta sheet, this is how to do it without dunning dada2 again to create a whole new ps
 ```
 
 #subset you ps objects
@@ -1445,4 +1447,135 @@ E1_E2_relAb <- ggplot(E1_E2_phyla_ab1, aes(x = Exp_Diet_Location, y = Abundance*
 pdf("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/BoxplotsANDScatter_RelAbundance/E1_E2_PhylaRelPhylaAbove1_collapse.pdf", height = 15, width = 24)
 E1_E2_relAb
 dev.off()
+```
+
+
+
+
+###Random Forest Analysis######
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Random Forest
+####Random Forests
+start with this one! https://rpubs.com/michberr/randomforestmicrobe #but we need to switch our response= ASV/OTU table  and predictor=Factors of interest(experiment, Diet, Protein, Maternal effects) variables!
+
+other tutorials worth a shot if needed:
+https://bioconductor.org/help/course-materials/2017/BioC2017/Day1/Workshops/Microbiome/MicrobiomeWorkflowII.html#supervised_learning
+https://www.researchgate.net/post/How-to-use-Random-Forest-method-to-analyze-gut-microbiota
+https://www.rdocumentation.org/packages/randomForest/versions/4.6-12/topics/randomForest
+
+```{r}
+#Load libraries
+library(ggplot2)
+library(vegan)
+library(dplyr)
+library(magrittr)
+library(scales)
+library(grid)
+library(reshape2)
+library(phyloseq)
+library(randomForest)
+library(randomForestSRC)
+library(knitr)
+library(plyr)
+library(tidyverse)
+```
+
+read in data used in random forest analysis
+```{r}
+ps_raw <- readRDS("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/DADA2_output/clean_ps.rds") #raw but with choloro,mito, low reads (less than 2000), and sample duplicates removed
+ps_raw
+ps_raw <- subset_samples(ps_raw, Days_in_study > 95)
+
+#Subset by E1 and E2 2.5P,5P, 10P; no duplicates
+ps_raw_E1_E2_forcomparison <- subset_samples(ps_raw, Percent_Protein %in% c("2.5P", "5P", "10P"))
+ps_raw_E1_E2_forcomparison <- subset_samples(ps_raw_E1_E2_forcomparison, Location %in% c("Duodenum", "Ileum", "Cecum"))
+ps_raw_E1_E2_forcomparison
+```
+
+#load metadata
+```{r}
+Meta <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/E1_E2_Meta_ALL.csv") #you should have 333 total samples
+row.names(Meta) <- Meta$Sample_ID
+```
+
+#now you are ready to run the RF algorithm.
+```{r}
+#Random Forest code
+
+library(phyloseq)
+library(randomForest)
+library(dplyr)
+
+# Prune rare taxa
+prunescale <- 0.0001
+minlib <- min(sample_sums(ps_raw_E1_E2_forcomparison))
+sites.mean <- taxa_sums(ps_raw_E1_E2_forcomparison) / nsamples(ps_raw_E1_E2_forcomparison)
+sites.prune <- prune_taxa(sites.mean > prunescale * minlib, ps_raw_E1_E2_forcomparison)
+
+
+# --- Prepare data ---
+otu_df <- as.data.frame((otu_table(sites.prune))) 
+meta_df <- as.data.frame(sample_data(sites.prune))
+
+factors <- c("Experiment", "Percent_Protein", "Location", "Breeding.Pair", "Sex")
+
+set.seed(123)  # reproducibility
+
+results <- lapply(factors, function(fac) {
+  y <- meta_df[[fac]]
+  if (is.numeric(y)) {
+    y <- as.numeric(y)
+  } else {
+    y <- as.factor(y)
+  }
+
+  # RF Model on actual data
+  rf_real <- randomForest(x = otu_df, y = y, ntree = 1000, importance = TRUE)
+  imp <- importance(rf_real)
+
+  OOB_real <- rf_real$err.rate[rf_real$ntree, "OOB"]
+  MDA_total <- mean(imp[, "MeanDecreaseAccuracy"], na.rm = TRUE)
+  MDA_norm <- MDA_total / ncol(otu_df)
+  Gini_total <- mean(imp[, "MeanDecreaseGini"], na.rm = TRUE)
+
+  #Generate 100 permutations for random error
+  perm_OOB <- replicate(100, {
+    y_perm <- sample(y)
+    rf_perm <- randomForest(x = otu_df, y = y_perm, ntree = 1000)
+    rf_perm$err.rate[rf_perm$ntree, "OOB"]
+  })
+
+  Random_Error_mean <- mean(perm_OOB)
+  Random_Error_sd <- sd(perm_OOB)
+
+  #Calc errors to compare between factors
+  Error_Ratio <- Random_Error_mean / OOB_real
+  Predictive_Accuracy <- 1 - (OOB_real / Random_Error_mean)
+
+#make data frame of all results
+  data.frame(
+    Factor = fac,
+    OOB_Error = OOB_real,
+    Random_Error_mean = Random_Error_mean,
+    Random_Error_sd = Random_Error_sd,
+    Error_Ratio = Error_Ratio,
+    Predictive_Accuracy = Predictive_Accuracy,
+    MeanDecreaseAccuracy_Total = MDA_total,
+    MeanDecreaseAccuracy_Normalized = MDA_norm,
+    MeanDecreaseGini_Total = Gini_total,
+    stringsAsFactors = FALSE
+  )
+})
+
+results_df <- do.call(rbind, results) %>%
+  arrange(desc(Predictive_Accuracy))
+
+print(results_df)
+#save and look at results
+print(results_df)
+write.csv(results_df, "/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/RandomForestOutput/MaternalEffect/RandomForest_output_accuracyandError_1000trees_100permutations_redo.csv")
 ```
