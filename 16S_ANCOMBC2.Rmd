@@ -3693,153 +3693,22 @@ Exp_DietColors<- scale_colour_manual(name="Exp_Diet_Location", values=Exp_Diet_S
 
 
 ############
-October 2025 CMM added additional ANCOMBC2 analyses to address R1 comments. Here we performed with gut section analysis by diet type and percent protein. 
-
-ANCOM
-Analysis of Compositions of Microbiomes with Bias Correction (ANCOM-BC) (Lin and Peddada 2020) is a methodology of differential abundance (DA) analysis for microbial absolute abundances. ANCOM-BC estimates the unknown sampling fractions, corrects the bias induced by their differences through a log linear regression model including the estimated sampling fraction as an offset terms, and identifies taxa that are differentially abundant according to the variable of interest. For more details, please refer to the ANCOM-BC paper.
-official tutorial: https://bioconductor.org/packages/release/bioc/vignettes/ANCOMBC/inst/doc/ANCOMBC2.html
-
-https://bioconductor.org/packages/devel/bioc/vignettes/ANCOMBC/inst/doc/ANCOMBC.html
-
-a helpful tutorial: https://www.yanh.org/2021/01/01/microbiome-r/#differential-abundance-analysis
-
-ANCOM manual: https://bioconductor.org/packages/release/bioc/manuals/ANCOMBC/man/ANCOMBC.pdf
-
-E1_gut section by percnt protein
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(message = FALSE, warning = FALSE, comment = NA, 
-                      fig.width = 6.25, fig.height = 5)
-library(ANCOMBC)
-library(tidyverse)
-library(caret)
-library(DT)
-options(DT.options = list(
-  initComplete = JS("function(settings, json) {",
-  "$(this.api().table().header()).css({'background-color': 
-  '#000', 'color': '#fff'});","}")))
-```
-
-#LOAD OTHER PACKAGES THAT MIGHT BE USEFUL
-```{r}
-#load packages
-# = this package is definitely needed
-library(BiocManager)
-library(phyloseq) #
-library(ggplot2) #
-library(randomForest)
-library(vegan)
-library(caret)
-library(gridExtra) #
-library(ggpubr) 
-library(ggthemes) #
-library(vegan) #
-library(MASS)
-library(cluster)
-library(RColorBrewer) #
-library(grid)
-library(cooccur)
-library(igraph)
-library(Hmisc)
-#library(minerva)
-library(parallel)
-library(corrplot)
-library(tidyverse) #
-library(plyr);library(dplyr) #
-library(tidyr) #
-library(usdm) #
-library(decontam) #
-library(ecodist) #
-library(betapart) #
-#library(psych)
-#library(ggbiplot)
-library(ANCOMBC) #
-library(DT) #
-library(gplots) #
-library(remotes)
-library(metagMisc)
-library(iNEXT)
-library("DESeq2")
-packageVersion("DESeq2")
-library("reshape2")
-library("remotes")
-library("phyloseq.extended")
-#library(ggvegan) 
-#library(ggpubfigs)
-#library(agricolae) #this package is not compatable with this version of R, if we really need it we will need to install new version of package
-library(RColorBrewer)
-library(scales)
-library("devtools")
-
-theme_set(theme_bw()) #sets ggplot theme
-```
+October 2025 CMM added additional ANCOMBC2 analyses to address R1 comments. Here we performed within gut section analysis by diet type and percent protein. We also tested for maternal effects.  
 
 
-#load metadata
-```{r}
-Meta <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/E1_E2_Meta_ALL.csv") #you should have 333 total samples
-row.names(Meta) <- Meta$Sample_ID
-```
-
-#read in ps objects
-```{r}
-ps_raw <- readRDS("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/DADA2_output/clean_ps.rds") #raw but with choloro,mito, low reads (less than 2000), and sample duplicates removed
-ps_all <- readRDS("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/RarefyOutput/ps_rare.rds") #this is my phyloseq object I will be using for the majority of my analysis. It contains all samples from E1 and E2 (duplicates not included) and has been rarefied at lib size of 8000.
-sample_data(ps_raw) <- Meta #If you beed to update your meta sheet, this is how to do it without dunning dada2 again to create a whole new ps
-sample_data(ps_all) <- Meta #If you beed to update your meta sheet, this is how to do it without dunning dada2 again to create a whole new ps
-```
-
-
-```{r}
-#read in un-normalized- unrarefied phyloseq object from rds (ANCOM normalizes for you, and if you give it normalized data it will give bias)
-#make relevant subsets
-
-### Make new phyloseq object of just E1, no duplicates
-E1_ps_raw <- subset_samples(ps_raw, Experiment=="E1")
-
-
-#Subset by E1 2.5P,5P, 10P only to compare to E2; no duplicates
-ps_raw_E1_forcomparison <- subset_samples(E1_ps_raw, Percent_Protein %in% c("2.5P", "5P", "10P"))
-ps_raw_E1_forcomparison <- subset_samples(ps_raw_E1_forcomparison, Location %in% c("Duodenum", "Ileum", "Cecum"))
-ps_raw_E1_forcomparison
-
-#Subset by E1 and E2 2.5P,5P, 10P; no duplicates
-ps_raw_E1_E2_forcomparison <- subset_samples(ps_raw, Percent_Protein %in% c("2.5P", "5P", "10P"))
-ps_raw_E1_E2_forcomparison <- subset_samples(ps_raw_E1_E2_forcomparison, Location %in% c("Duodenum", "Ileum", "Cecum"))
-ps_raw_E1_E2_forcomparison
-
-
-### Make new phyloseq object of just E2, no duplicates
-E2_ps_raw <- subset_samples(ps_raw, Experiment=="E2")   
-
-
-#Subset by E1_E2_Location
-ps_raw_E1_E2_duod <- subset_samples(ps_raw_E1_E2_forcomparison, Location %in% c("Duodenum"))
-ps_raw_E1_E2_ile <- subset_samples(ps_raw_E1_E2_forcomparison, Location %in% c("Ileum"))
-ps_raw_E1_E2_cec <- subset_samples(ps_raw_E1_E2_forcomparison, Location %in% c("Cecum"))
-
-#Subset by Experiment and by Location
-ps_raw_E1_duod <- subset_samples(ps_raw_E1_forcomparison, Location %in% c("Duodenum"))
-ps_raw_E1_ile <- subset_samples(ps_raw_E1_forcomparison, Location %in% c("Ileum"))
-ps_raw_E1_cec <- subset_samples(ps_raw_E1_forcomparison, Location %in% c("Cecum"))
-ps_raw_E2_duod <- subset_samples(E2_ps_raw, Location %in% c("Duodenum"))
-ps_raw_E2_ile <- subset_samples(E2_ps_raw, Location %in% c("Ileum"))
-ps_raw_E2_cec <- subset_samples(E2_ps_raw, Location %in% c("Cecum"))
-
-```
-
-Now lets look at whether we can see %protein differences within each gut section
+#ANCOMBC2 by Location- E1 vs E2 for all locations samples by ASV
 ```{r}
 output = ancombc2(
-  ps_raw_E1_duod,
+  ps_raw_E1_E2_forcomparison,
   assay_name = NULL,
   tax_level = NULL, #keep null if you want at ASV level
-  fix_formula= "Exp_Diet",
+  fix_formula= "Percent_Protein + Exp_Location",
   rand_formula = NULL,
   p_adj_method = "holm",
   prv_cut = 0.1,
   lib_cut = 0,
   s0_perc = 0.05,
-  group = "Exp_Diet", #leave as null if group variable of interest contains only two categories 
+  group = "Exp_Location", #leave as null if group variable of interest contains only two categories 
   struc_zero = FALSE,
   neg_lb = FALSE,
   alpha = 0.05,
@@ -3857,875 +3726,559 @@ output = ancombc2(
 )
 ```
 
+
+
 Save the output
 ```{r}
-#The primary output of the ANCOM-BC2 methodology (res) identifies taxa with differential abundance based on the chosen covariate. The results include: 1) log fold changes, 2) standard errors, 3) test statistics, 4) p-values, 5) adjusted p-values, 6) indicators denoting whether the taxon is differentially abundant (TRUE) or not (FALSE), and 7) indicators denoting whether the taxon passed the sensitivity analysis (TRUE) or not (FALSE).
-
 res_pair = output$res_pair
-saveRDS(res_pair, "/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E1_duod_by_Percent_Protein_res_pair.rds")
-E1_duod_by_Percent_Protein_res_pair <- readRDS("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E1_duod_by_Percent_Protein_res_pair.rds")
-```
+saveRDS(res_pair, "/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/codeexports/E1_E2_forcomparison/redo/E1vsE2_LOCATION_res_pair.rds")
+E1vsE2_LOCATION_res_pair <- readRDS("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/codeexports/E1_E2_forcomparison/redo/E1vsE2_LOCATION_res_pair.rds")
 
-
-##ANCOM-BC2 pairwise directional test
-ANCOM-BC2 pairwise directional test aims to determine taxa that are differentially abundant between any pair of two groups across three or more experimental groups, while controlling the mdFDR.
-
-```{r}
-#save as csv so that you can interjoin with metadata
-E1_duod_by_Percent_Protein_res_pair
-
-write.csv(E1_duod_by_Percent_Protein_res_pair, "/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E1_duod_by_Percent_Protein_res_pair_edit.csv")
-
-#read in your res_pair csv: 
-E1_duod_by_Percent_Protein_res_pair2 <- read.csv("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E1_duod_by_Percent_Protein_res_pair_edit.csv")
-#change name so target_ids match on both files
-names(E1_duod_by_Percent_Protein_res_pair2)[2] ="taxon" 
-
-#read in your Taxonomy classification file 
-Taxonomy_classification <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/DADA2_output/ALL_taxa.csv") #if this doesn't load be sure to download the file from the cloud, then it will work
-#change name so target_ids match on both files
-names(Taxonomy_classification)[1] ="taxon"
-
-#now we need to get our gapmind results and join it with our Taxonomy results from CAT (combining two data frames)
-#we only want to keep the genes that showed up with gapmind, we don't need the other genes that showed up
-Part_1 <- Taxonomy_classification %>% 
-  inner_join (E1_duod_by_Percent_Protein_res_pair2, by = "taxon")
-
-write.csv(Part_1,"/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E1vsE2_Duod_Exp_Diet_res_pair_AND_Taxonomy.csv") # went in here and edited file to my liking
 ```
 
 
 
-
-
-#E1_PROTEIN_in duod
+#E1_E2_Location
 ANCOMBC2
-pairwise comparisons by experiment and PROTEIN
+pairwise comparisons by experiment and Location
 ```{r}
 #create your data frame for log fold change of pairwise comparisons for dot plot! We will use this to graph dot plots of bargraphs
-df_res_pair = E1_duod_by_Percent_Protein_res_pair %>%
-  dplyr::filter(diff_Exp_DietE1_2.5P == 1) %>%
-  mutate(lfc_E1_2.5P = ifelse(diff_Exp_DietE1_2.5P == 1, 
-                             lfc_Exp_DietE1_2.5P, 0)) %>%
+df_fig_trend = E1vsE2_LOCATION_res_pair %>%
+  dplyr::filter(diff_Exp_LocationE1_DUOD == 1) %>%
+  mutate(lfc_E1_DUOD = ifelse(diff_Exp_LocationE1_DUOD == 1, 
+                             lfc_Exp_LocationE1_DUOD, 0)) %>%
               transmute(taxon,
-              lfc = lfc_E1_2.5P,
-              se = se_Exp_DietE1_2.5P,
-              p_val= p_Exp_DietE1_2.5P,
-              group = "E1_2.5P - E1_10P") %>%
+              lfc = lfc_E1_DUOD,
+              se = se_Exp_LocationE1_DUOD,
+              p_val= p_Exp_LocationE1_DUOD,
+              group = "E1_DUOD - E1_CEC") %>%
               
   bind_rows(
-  E1_duod_by_Percent_Protein_res_pair %>%
-  dplyr::filter(diff_Exp_DietE1_5P == 1) %>%
-  mutate(lfc_E1_5P = ifelse(diff_Exp_DietE1_5P == 1, 
-                             lfc_Exp_DietE1_5P, 0)) %>%
+  E1vsE2_LOCATION_res_pair %>%
+  dplyr::filter(diff_Exp_LocationE1_IL == 1) %>%
+  mutate(lfc_E1_IL = ifelse(diff_Exp_LocationE1_IL == 1, 
+                             lfc_Exp_LocationE1_IL, 0)) %>%
             transmute(taxon,
-                      lfc = lfc_E1_5P,
-                      se = se_Exp_DietE1_5P,
-                      p_val = p_Exp_DietE1_5P,
-                      group = "E1_5P - E1_10P")
+                      lfc = lfc_E1_IL,
+                      se = se_Exp_LocationE1_IL,
+                      p_val = p_Exp_LocationE1_IL,
+                      group = "E1_IL - E1_CEC")
+  ) %>%
+    bind_rows(
+    E1vsE2_LOCATION_res_pair %>%
+    dplyr::filter(diff_Exp_LocationE2_CEC == 1) %>%
+    mutate(lfc_E2_CEC = ifelse(diff_Exp_LocationE2_CEC == 1, 
+                                   lfc_Exp_LocationE2_CEC, 0)) %>%
+            transmute(taxon,
+                      lfc = lfc_E2_CEC,
+                      se = se_Exp_LocationE2_CEC,
+                      p_val= p_Exp_LocationE2_CEC,
+                      group = "E2_CEC - E1_CEC")
+    ) %>%
+   bind_rows(
+    E1vsE2_LOCATION_res_pair %>%
+    dplyr::filter(diff_Exp_LocationE2_DUOD == 1) %>%
+    mutate(lfc_E2_DUOD = ifelse(diff_Exp_LocationE2_DUOD == 1, 
+                                   lfc_Exp_LocationE2_DUOD, 0)) %>%
+                    transmute(taxon,
+                      lfc = lfc_E2_DUOD,
+                      se = se_Exp_LocationE2_DUOD,
+                      p_val = p_Exp_LocationE2_DUOD,
+                      group = "E2_DUOD - E1_CEC")
+    ) %>%  
+   bind_rows(
+    E1vsE2_LOCATION_res_pair %>%
+    dplyr::filter(diff_Exp_LocationE2_IL == 1) %>%
+    mutate(lfc_E2_IL = ifelse(diff_Exp_LocationE2_IL == 1, 
+                                   lfc_Exp_LocationE2_IL, 0)) %>%  
+                    transmute(taxon,
+                      lfc = lfc_E2_IL,
+                      se = se_Exp_LocationE2_IL,
+                      p_val = p_Exp_LocationE2_IL,
+                      group = "E2_IL - E1_CEC") 
     ) %>%                 
     bind_rows(
-    E1_duod_by_Percent_Protein_res_pair %>%
-    dplyr::filter(diff_Exp_DietE1_5P_Exp_DietE1_2.5P == 1) %>%
-    mutate(lfc_E1_5P_E1_2.5P = ifelse(diff_Exp_DietE1_5P_Exp_DietE1_2.5P == 1, 
-                                   lfc_Exp_DietE1_5P_Exp_DietE1_2.5P, 0)) %>%
+    E1vsE2_LOCATION_res_pair %>%
+    dplyr::filter(diff_Exp_LocationE1_IL_Exp_LocationE1_DUOD == 1) %>%
+    mutate(lfc_E1_IL_E1_DUOD = ifelse(diff_Exp_LocationE1_IL_Exp_LocationE1_DUOD == 1, 
+                                   lfc_Exp_LocationE1_IL_Exp_LocationE1_DUOD, 0)) %>%
                     transmute(taxon,
-                      lfc = lfc_E1_5P_E1_2.5P,
-                      se = se_Exp_DietE1_5P_Exp_DietE1_2.5P,
-                      p_val = p_Exp_DietE1_5P_Exp_DietE1_2.5P,
-                      group = "E1_5P - E1_2.5P")
+                      lfc = lfc_E1_IL_E1_DUOD,
+                      se = se_Exp_LocationE1_IL_Exp_LocationE1_DUOD,
+                      p_val = p_Exp_LocationE1_IL_Exp_LocationE1_DUOD,
+                      group = "E1_IL - E1_DUOD")
+    ) %>%              
+    bind_rows(
+    E1vsE2_LOCATION_res_pair %>%
+    dplyr::filter(diff_Exp_LocationE2_CEC_Exp_LocationE1_DUOD == 1) %>%
+    mutate(lfc_E2_CEC_E1_DUOD = ifelse(diff_Exp_LocationE2_CEC_Exp_LocationE1_DUOD == 1, 
+                                   lfc_Exp_LocationE2_CEC_Exp_LocationE1_DUOD, 0)) %>%
+                    transmute(taxon,
+                      lfc = lfc_E2_CEC_E1_DUOD,
+                      se = se_Exp_LocationE2_CEC_Exp_LocationE1_DUOD,
+                      p_val = p_Exp_LocationE2_CEC_Exp_LocationE1_DUOD,
+                      group = "E2_CEC - E1_DUOD") 
+    ) %>%              
+    bind_rows(
+    E1vsE2_LOCATION_res_pair %>%
+    dplyr::filter(diff_Exp_LocationE2_DUOD_Exp_LocationE1_DUOD == 1) %>%
+    mutate(lfc_E2_DUOD_E1_DUOD = ifelse(diff_Exp_LocationE2_DUOD_Exp_LocationE1_DUOD == 1, 
+                                   lfc_Exp_LocationE2_DUOD_Exp_LocationE1_DUOD, 0)) %>%
+                    transmute(taxon,
+                      lfc = lfc_E2_DUOD_E1_DUOD,
+                      se = se_Exp_LocationE2_DUOD_Exp_LocationE1_DUOD,
+                      p_val = p_Exp_LocationE2_DUOD_Exp_LocationE1_DUOD,
+                      group = "E2_DUOD - E1_DUOD")
+    ) %>%
+    bind_rows(
+    E1vsE2_LOCATION_res_pair %>%
+    dplyr::filter(diff_Exp_LocationE2_IL_Exp_LocationE1_DUOD == 1) %>%
+    mutate(lfc_E2_IL_E1_DUOD = ifelse(diff_Exp_LocationE2_IL_Exp_LocationE1_DUOD == 1, 
+                                   lfc_Exp_LocationE2_IL_Exp_LocationE1_DUOD, 0)) %>%
+                    transmute(taxon,
+                      lfc = lfc_E2_IL_E1_DUOD,
+                      se = se_Exp_LocationE2_IL_Exp_LocationE1_DUOD,
+                      p_val = p_Exp_LocationE2_IL_Exp_LocationE1_DUOD,
+                      group = "E2_IL - E1_DUOD")
+    ) %>%
+    bind_rows(
+    E1vsE2_LOCATION_res_pair %>%
+    dplyr::filter(diff_Exp_LocationE2_CEC_Exp_LocationE1_IL == 1) %>%
+    mutate(lfc_E2_CEC_E1_IL = ifelse(diff_Exp_LocationE2_CEC_Exp_LocationE1_IL == 1, 
+                                   lfc_Exp_LocationE2_CEC_Exp_LocationE1_IL, 0)) %>%
+                transmute(taxon,
+                      lfc = lfc_E2_CEC_E1_IL,
+                      se = se_Exp_LocationE2_CEC_Exp_LocationE1_IL,
+                      p_val = p_Exp_LocationE2_CEC_Exp_LocationE1_IL,
+                      group = "E2_CEC - E1_IL")
+    ) %>%
+ bind_rows(
+    E1vsE2_LOCATION_res_pair %>%
+    dplyr::filter(diff_Exp_LocationE2_DUOD_Exp_LocationE1_IL == 1) %>%
+    mutate(lfc_E2_DUOD_E1_IL = ifelse(diff_Exp_LocationE2_DUOD_Exp_LocationE1_IL == 1, 
+                                   lfc_Exp_LocationE2_DUOD_Exp_LocationE1_IL, 0)) %>% 
+                    transmute(taxon,
+                      lfc = lfc_E2_DUOD_E1_IL,
+                      se = se_Exp_LocationE2_DUOD_Exp_LocationE1_IL,
+                      p_val = p_Exp_LocationE2_DUOD_Exp_LocationE1_IL,
+                      group = "E2_DUOD - E1_IL")
+    ) %>%
+bind_rows(
+    E1vsE2_LOCATION_res_pair %>%
+    dplyr::filter(diff_Exp_LocationE2_IL_Exp_LocationE1_IL == 1) %>%
+    mutate(lfc_E2_IL_E1_IL = ifelse(diff_Exp_LocationE2_IL_Exp_LocationE1_IL == 1, 
+                                   lfc_Exp_LocationE2_IL_Exp_LocationE1_IL, 0)) %>% 
+                    transmute(taxon,
+                      lfc = lfc_E2_IL_E1_IL,
+                      se = se_Exp_LocationE2_IL_Exp_LocationE1_IL,
+                      p_val = p_Exp_LocationE2_IL_Exp_LocationE1_IL,
+                      group = "E2_IL - E1_IL")
+    ) %>%    
+bind_rows(
+    E1vsE2_LOCATION_res_pair %>%
+    dplyr::filter(diff_Exp_LocationE2_DUOD_Exp_LocationE2_CEC == 1) %>%
+    mutate(lfc_E2_DUOD_E2_CEC = ifelse(diff_Exp_LocationE2_DUOD_Exp_LocationE2_CEC == 1, 
+                                   lfc_Exp_LocationE2_DUOD_Exp_LocationE2_CEC, 0)) %>% 
+                    transmute(taxon,
+                      lfc = lfc_E2_DUOD_E2_CEC,
+                      se = se_Exp_LocationE2_DUOD_Exp_LocationE2_CEC,
+                      p_val= p_Exp_LocationE2_DUOD_Exp_LocationE2_CEC,
+                      group = "E2_DUOD - E2_CEC")
+) %>%
+bind_rows(
+    E1vsE2_LOCATION_res_pair %>%
+    dplyr::filter(diff_Exp_LocationE2_IL_Exp_LocationE2_CEC == 1) %>%
+    mutate(lfc_E2_IL_E2_CEC = ifelse(diff_Exp_LocationE2_IL_Exp_LocationE2_CEC == 1, 
+                                   lfc_Exp_LocationE2_IL_Exp_LocationE2_CEC, 0)) %>%
+                    transmute(taxon,
+                      lfc = lfc_E2_IL_E2_CEC,
+                      se = se_Exp_LocationE2_IL_Exp_LocationE2_CEC,
+                      p_val = p_Exp_LocationE2_IL_Exp_LocationE2_CEC,
+                      group = "E2_IL - E2_CEC")
+    ) %>%  
+bind_rows(
+    E1vsE2_LOCATION_res_pair %>%
+    dplyr::filter(diff_Exp_LocationE2_IL_Exp_LocationE2_DUOD == 1) %>%
+    mutate(lfc_E2_IL_E2_DUOD = ifelse(diff_Exp_LocationE2_IL_Exp_LocationE2_DUOD == 1, 
+                                        lfc_Exp_LocationE2_IL_Exp_LocationE2_DUOD, 0)) %>%
+                    transmute(taxon,
+                      lfc = lfc_E2_IL_E2_DUOD,
+                      se = se_Exp_LocationE2_IL_Exp_LocationE2_DUOD,
+                      p_val = p_Exp_LocationE2_IL_Exp_LocationE2_DUOD,
+                      group = "E2_IL - E2_DUOD")
     )
-      df_res_pair$group = factor(df_res_pair$group, 
-                            levels = c("E1_2.5P - E1_10P",
-                                      "E1_5P - E1_10P",
-                                      "E1_5P - E1_2.5P"
-                                      ))
+      df_fig_trend$group = factor(df_fig_trend$group, 
+                            levels = c("E1_DUOD - E1_CEC",
+                                      "E1_IL - E1_CEC",
+                                      "E2_CEC - E1_CEC",
+                                      "E2_DUOD - E1_CEC",
+                                      "E2_IL - E1_CEC",
+                                      "E1_IL - E1_DUOD",
+                                      "E2_CEC - E1_DUOD",
+                                      "E2_DUOD - E1_DUOD",
+                                      "E2_IL - E1_DUOD",
+                                      "E2_CEC - E1_IL",
+                                      "E2_DUOD - E1_IL",
+                                      "E2_IL - E1_IL",
+                                      "E2_DUOD - E2_CEC",
+                                      "E2_IL - E2_CEC",
+                                      "E2_IL - E2_DUOD"))
 
 
 ```
-
 Save the df you created
 ```{r}
-write.csv(df_res_pair, "/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E1_duod_by_Percent_Protein_df_res_pair.csv") #ADD IN OTHER CATEGORIES YOU WANT TO GRAPH 
-```
+write.csv(df_fig_trend, "/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/codeexports/E1_E2_forcomparison/redo/E1vsE2_LOCATION_df_fig_trend_redo.csv") #ADD IN OTHER CATEGORIES YOU WANT TO GRAPH 
 
-there were no ASVs that are differentially abundant in the duodenum of mice fed the synthetic diet by percent protein. 
-
-
-
-Now lets look at whether we can see %protein differences in the Ileum
-
-```{r}
-output = ancombc2(
-  ps_raw_E1_ile,
-  assay_name = NULL,
-  tax_level = NULL, #keep null if you want at ASV level
-  fix_formula= "Exp_Diet",
-  rand_formula = NULL,
-  p_adj_method = "holm",
-  prv_cut = 0.1,
-  lib_cut = 0,
-  s0_perc = 0.05,
-  group = "Exp_Diet", #leave as null if group variable of interest contains only two categories 
-  struc_zero = FALSE,
-  neg_lb = FALSE,
-  alpha = 0.05,
-  n_cl = 1,
-  verbose = FALSE,
-  global = TRUE,
-  pairwise = TRUE,
-  dunnet = TRUE,
-  trend = FALSE,
-  iter_control = list(tol = 0.01, max_iter = 20, verbose = FALSE),
-  em_control = list(tol = 1e-05, max_iter = 100),
-  lme_control = lme4::lmerControl(),
-  mdfdr_control = list(fwer_ctrl_method = "holm", B = 100),
-  trend_control = list(contrast = NULL, node = NULL, solver = "ECOS", B = 100)
-)
-```
-
-Save the output
-```{r}
-#The primary output of the ANCOM-BC2 methodology (res) identifies taxa with differential abundance based on the chosen covariate. The results include: 1) log fold changes, 2) standard errors, 3) test statistics, 4) p-values, 5) adjusted p-values, 6) indicators denoting whether the taxon is differentially abundant (TRUE) or not (FALSE), and 7) indicators denoting whether the taxon passed the sensitivity analysis (TRUE) or not (FALSE).
-
-res_pair = output$res_pair
-saveRDS(res_pair, "/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E1_ile_by_Percent_Protein_res_pair.rds")
-E1_ile_by_Percent_Protein_res_pair <- readRDS("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E1_ile_by_Percent_Protein_res_pair.rds")
-```
-
-
-##ANCOM-BC2 pairwise directional test
-ANCOM-BC2 pairwise directional test aims to determine taxa that are differentially abundant between any pair of two groups across three or more experimental groups, while controlling the mdFDR.
-
-
-#E1_PROTEIN_in ile
-ANCOMBC2 pairwise comparisons 
-```{r}
-#create your data frame for log fold change of pairwise comparisons for dot plot! We will use this to graph dot plots of bargraphs
-df_res_pair = E1_ile_by_Percent_Protein_res_pair %>%
-  dplyr::filter(diff_Exp_DietE1_2.5P == 1) %>%
-  mutate(lfc_E1_2.5P = ifelse(diff_Exp_DietE1_2.5P == 1, 
-                              lfc_Exp_DietE1_2.5P, 0)) %>%
-  transmute(taxon,
-            lfc = lfc_E1_2.5P,
-            se = se_Exp_DietE1_2.5P,
-            p_val= p_Exp_DietE1_2.5P,
-            group = "E1_2.5P - E1_10P") %>%
-  
-  bind_rows(
-    E1_ile_by_Percent_Protein_res_pair %>%
-      dplyr::filter(diff_Exp_DietE1_5P == 1) %>%
-      mutate(lfc_E1_5P = ifelse(diff_Exp_DietE1_5P == 1, 
-                                lfc_Exp_DietE1_5P, 0)) %>%
-      transmute(taxon,
-                lfc = lfc_E1_5P,
-                se = se_Exp_DietE1_5P,
-                p_val = p_Exp_DietE1_5P,
-                group = "E1_5P - E1_10P")
-  ) %>%                 
-  bind_rows(
-    E1_ile_by_Percent_Protein_res_pair %>%
-      dplyr::filter(diff_Exp_DietE1_5P_Exp_DietE1_2.5P == 1) %>%
-      mutate(lfc_E1_5P_E1_2.5P = ifelse(diff_Exp_DietE1_5P_Exp_DietE1_2.5P == 1, 
-                                        lfc_Exp_DietE1_5P_Exp_DietE1_2.5P, 0)) %>%
-      transmute(taxon,
-                lfc = lfc_E1_5P_E1_2.5P,
-                se = se_Exp_DietE1_5P_Exp_DietE1_2.5P,
-                p_val = p_Exp_DietE1_5P_Exp_DietE1_2.5P,
-                group = "E1_5P - E1_2.5P")
-  )
-df_res_pair$group = factor(df_res_pair$group, 
-                           levels = c("E1_2.5P - E1_10P",
-                                      "E1_5P - E1_10P",
-                                      "E1_5P - E1_2.5P"
-                           ))
-
-
-```
-
-Save the df you created
-```{r}
-#write.csv(df_res_pair, "/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E1_ile_by_Percent_Protein_df_res_pair.csv") #ADD IN OTHER CATEGORIES YOU WANT TO GRAPH 
-```
-
-there were 2 ASVs that are differentially abundant in the ileum of mice fed the synthetic diet by percent protein.
-E1_ile
-E1_2.5P vs E1_10P: ASV80 is differentially abundant in E1_10P 
-E1_5P vs E1_2.5P: ASV80 is differentially abundant in E1_5P
-E1_5P vs E1_10P: no ASVs differentially abundant identified
-
-Save the df you created
-```{r}
 #read in your EDITED DF csv: 
-E1_ile_by_Percent_Protein_df_res_pair <- read.csv("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E1_ile_by_Percent_Protein_df_res_pair_edit.csv")
+E1vsE2_LOCATION_df_fig_trend <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/codeexports/E1_E2_forcomparison/redo/E1vsE2_LOCATION_df_fig_trend_redo.csv")
 #change name so target_ids match on both files
-names(E1_ile_by_Percent_Protein_df_res_pair)[2] ="taxon" 
+names(E1vsE2_LOCATION_df_fig_trend)[2] ="taxon" 
 
-#match to taxonomy
+#read in your TAXA classification file 
 Taxonomy_classification <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/DADA2_output/ALL_taxa.csv") #if this doesn't load be sure to dowload the file from the cloud, then it will work
 #change name so target_ids match on both files
 names(Taxonomy_classification)[1] ="taxon"
 
-#now we need to get our DF results and join it with our Taxonomy results from DADA2 (combining two data frames)
+#now we need to get our DF results and join it with our Taxonomy results from CAT (combining two data frames)
 #we only want to keep the genes that showed up with gapmind, we don't need the other genes that showed up
 Part_DF <- Taxonomy_classification %>% 
-  inner_join (E1_ile_by_Percent_Protein_df_res_pair, by = "taxon")
+  inner_join (E1vsE2_LOCATION_df_fig_trend, by = "taxon")
 
-write.csv(Part_DF,"/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E1_ILE_PROTEIN_DF_RES_PAIR_AND_Taxonomy.csv") # went in here and edited file to my liking. That is what I will be using for the figures.  
+#write.csv(Part_DF,"/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/codeexports/E1_E2_forcomparison/redo/E1vsE2_LOCATION_DF_FIG_TREND_AND_Taxonomy_redo.csv") # went in here and edited file to my liking. I saved the new version as edit_E1vsE2_LOCATION_DF_FIG_TREND_AND_Taxonomy.csv. That is what I will be using for the figures. I basically switched the signs for the differential abundant taxa to be positive for E1 and negative for E2 but consistent with whatever category it was being compared to. 
 
 ```
 
 
+Just keep it simple 
+#trying to compare just by experiment and location so:
+#E1_duod vs E2_duod
+#E1_ile vs E2_ile
+#E1_cec vs E2_cec
 
-#E1_PROTEIN_in cec
-ANCOMBC2 pairwise comparisons
+#read in the edited df
 ```{r}
-output = ancombc2(
-  ps_raw_E1_cec,
-  assay_name = NULL,
-  tax_level = NULL, #keep null if you want at ASV level
-  fix_formula= "Exp_Diet",
-  rand_formula = NULL,
-  p_adj_method = "holm",
-  prv_cut = 0.1,
-  lib_cut = 0,
-  s0_perc = 0.05,
-  group = "Exp_Diet", #leave as null if group variable of interest contains only two categories 
-  struc_zero = FALSE,
-  neg_lb = FALSE,
-  alpha = 0.05,
-  n_cl = 1,
-  verbose = FALSE,
-  global = TRUE,
-  pairwise = TRUE,
-  dunnet = TRUE,
-  trend = FALSE,
-  iter_control = list(tol = 0.01, max_iter = 20, verbose = FALSE),
-  em_control = list(tol = 1e-05, max_iter = 100),
-  lme_control = lme4::lmerControl(),
-  mdfdr_control = list(fwer_ctrl_method = "holm", B = 100),
-  trend_control = list(contrast = NULL, node = NULL, solver = "ECOS", B = 100)
-)
-```
-
-Save the output
-```{r}
-#The primary output of the ANCOM-BC2 methodology (res) identifies taxa with differential abundance based on the chosen covariate. The results include: 1) log fold changes, 2) standard errors, 3) test statistics, 4) p-values, 5) adjusted p-values, 6) indicators denoting whether the taxon is differentially abundant (TRUE) or not (FALSE), and 7) indicators denoting whether the taxon passed the sensitivity analysis (TRUE) or not (FALSE).
-
-res_pair = output$res_pair
-saveRDS(res_pair, "/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E1_cec_by_Percent_Protein_res_pair.rds")
-E1_cec_by_Percent_Protein_res_pair <- readRDS("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E1_cec_by_Percent_Protein_res_pair.rds")
+E1vsE2_df <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/codeexports/E1_E2_forcomparison/redo/edit_E1vsE2_LOCATION_DF_FIG_TREND_AND_Taxonomy_redo.csv")
 ```
 
 
-##ANCOM-BC2 pairwise directional test
-ANCOM-BC2 pairwise directional test aims to determine taxa that are differentially abundant between any pair of two groups across three or more experimental groups, while controlling the mdFDR.
+#filter to keep comparisons of interest and mutate so that location and ASV's are in the correct order
 
-
-#E1_PROTEIN_in cecum
-ANCOMBC2
-pairwise comparisons by experiment and PROTEIN
 ```{r}
-#create your data frame for log fold change of pairwise comparisons for dot plot! We will use this to graph dot plots of bargraphs
-df_res_pair = E1_cec_by_Percent_Protein_res_pair %>%
-  dplyr::filter(diff_Exp_DietE1_2.5P == 1) %>%
-  mutate(lfc_E1_2.5P = ifelse(diff_Exp_DietE1_2.5P == 1, 
-                              lfc_Exp_DietE1_2.5P, 0)) %>%
-  transmute(taxon,
-            lfc = lfc_E1_2.5P,
-            se = se_Exp_DietE1_2.5P,
-            p_val= p_Exp_DietE1_2.5P,
-            group = "E1_2.5P - E1_10P") %>%
-  
-  bind_rows(
-    E1_cec_by_Percent_Protein_res_pair %>%
-      dplyr::filter(diff_Exp_DietE1_5P == 1) %>%
-      mutate(lfc_E1_5P = ifelse(diff_Exp_DietE1_5P == 1, 
-                                lfc_Exp_DietE1_5P, 0)) %>%
-      transmute(taxon,
-                lfc = lfc_E1_5P,
-                se = se_Exp_DietE1_5P,
-                p_val = p_Exp_DietE1_5P,
-                group = "E1_5P - E1_10P")
-  ) %>%                 
-  bind_rows(
-    E1_cec_by_Percent_Protein_res_pair %>%
-      dplyr::filter(diff_Exp_DietE1_5P_Exp_DietE1_2.5P == 1) %>%
-      mutate(lfc_E1_5P_E1_2.5P = ifelse(diff_Exp_DietE1_5P_Exp_DietE1_2.5P == 1, 
-                                        lfc_Exp_DietE1_5P_Exp_DietE1_2.5P, 0)) %>%
-      transmute(taxon,
-                lfc = lfc_E1_5P_E1_2.5P,
-                se = se_Exp_DietE1_5P_Exp_DietE1_2.5P,
-                p_val = p_Exp_DietE1_5P_Exp_DietE1_2.5P,
-                group = "E1_5P - E1_2.5P")
+E1vsE2_LOCATION_df1 <- read.csv("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/codeexports/E1_E2_forcomparison/redo/importLocationFig.csv") %>%
+  filter(  group == "E2_DUOD - E1_DUOD" |
+           group == "E2_CEC - E1_CEC" |
+           group == "E2_IL - E1_IL" |
+           group == "E1_DUOD - E2_DUOD" |
+           group == "E1_CEC - E2_CEC" |
+           group == "E1_IL - E2_IL" )%>%
+ mutate(Differentially_Abundant_Group = factor(Differentially_Abundant_Group, levels = c("E1_DUOD","E1_IL", "E1_CEC", "E2_DUOD","E2_IL", "E2_CEC"))) %>%
+ mutate(Differentially_Abundant_Location = factor(Differentially_Abundant_Location, levels = c("DUOD","IL", "CEC"))) %>%
+ mutate(taxon = factor(taxon, levels = c(
+"ASV8",
+"ASV23",
+"ASV330",
+"ASV14",
+"ASV90",
+"ASV31",
+"ASV11",
+"ASV6",
+"ASV27",
+"ASV5",
+"ASV17",
+"ASV78",
+"ASV131",
+"ASV1",
+"ASV21",
+"ASV72",
+"ASV15",
+"ASV61",
+"ASV114",
+"ASV9",
+"ASV13",
+"ASV270",
+"ASV18",
+"ASV44",
+"ASV16",
+"ASV82",
+"ASV42",
+"ASV239")))
+
+```
+
+change color of location
+```{r}
+#first you want to factor your items. These are the names of the Location in the order I want them to be every time. 
+E1vsE2_LOCATION_df1$Differentially_Abundant_Location <-factor(E1vsE2_LOCATION_df1$Differentially_Abundant_Location, levels=c("DUOD","IL", "CEC"))
+
+#now create an object that is a list of colors in a certain order.The colors I chose are "color-blind friendly":
+LocationScale <- c("#440a48","#47da7a","#dba0ff")
+#scales::show_col(LocationScale)
+
+#now we want to merge the two. We are taking the order from the locations and telling it that it needs to match the order from the cbPalette.
+names(LocationScale) <- levels(E1vsE2_LOCATION_df1$Differentially_Abundant_Location)
+#Have you ever used the scale_colour_manual command? Now we can combine that command and all of the stuff we want in it into a new object, LocationColors. At the end of your ggplot code, just add a +LocationColors (or whatever you decide to name it), and it should pull the colors you made! 
+LocationColors<- scale_colour_manual(name="Location", values=LocationScale)
+```
+
+
+
+#When we compared the synthetic vs the seminatural in each gut section we found:
+After taking out mice <95days in study:
+E1_duod vs E2_duod: in the duodenum ASV6 and ASV114 was found to be differentially abundant in the synthetic diet compared to the semi-natural diet.  
+E1_ile vs E2_ile: in the ileum ASV5 and ASV17 were found to be differentially abundant in the semi-natural diet compared to the synthetic diet. 
+E1_cec vs E2_cec: In the cecum ASV5, ASV17, and ASV9 are differentially abundant in the semiinatural diet compared to the synthetic diet. 
+
+```{r}
+#first you want to factor your items. These are the names of the Location in the order I want them to be every time. 
+E1vsE2_LOCATION_df1$LocationvsLocation <-factor(E1vsE2_LOCATION_df1$LocationvsLocation, levels=c("DUODvsDUOD","ILvsIL", "CECvsCEC"))
+#plot it
+fig_trend = E1vsE2_LOCATION_df1 %>% 
+  ggplot(aes(x = lfc_figure, y = taxon, color = Differentially_Abundant_Location, shape = Differentially_Abundant_Experiment)) + 
+  geom_point(size = 4, position = position_dodge()) +
+  geom_errorbar(
+    aes(xmin = lfc_figure - se, xmax = lfc_figure + se), 
+    width = .2) +
+  geom_vline(aes(xintercept = 0), linetype = "dashed")+
+  facet_wrap(~LocationvsLocation, strip.position="top") +
+  labs(x = "Log Fold Change", y = "ASV", title = "Differentially Abundant Taxa") +
+  LocationColors +
+  scale_shape_manual(
+    values = c("E1" = 16,  # circle
+               "E2" = 17)  # triangle
+  ) +
+  scale_x_continuous(limits=c(-9, 9)) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12, angle = 90),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text = element_text(size=6),
+    strip.text.y = element_text(color="black", size=12, angle=90),
+    legend.title = element_text(color="black", size=14),
+    legend.text = element_text(color="black", size=12),
+    legend.key.size = unit(1, 'cm'),
+    legend.position = "bottom",
+    strip.background = element_blank(), #to remove facet wrap title
+    axis.title.x = element_text(color="black", size=12),
+    axis.title.y = element_text(color="black", size=12, angle=90),
+    panel.grid.major = element_blank(), # switch off major gridlines
+    panel.grid.minor = element_blank()# switch off minor gridlines
   )
-df_res_pair$group = factor(df_res_pair$group, 
-                           levels = c("E1_2.5P - E1_10P",
-                                      "E1_5P - E1_10P",
-                                      "E1_5P - E1_2.5P"
-                           ))
-
-
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/plots/E1_E2_LocationComps_redo.pdf", height = 4, width = 8)
+fig_trend
+dev.off()
 ```
 
-Save the df you created
+#####
+now lets expand our data set to include more comparisons between E1 vs E2 in variious get sections
 ```{r}
-write.csv(df_res_pair, "/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E1_cec_by_Percent_Protein_df_res_pair.csv") #ADD IN OTHER CATEGORIES YOU WANT TO GRAPH 
+E1vsE2_LOCATION_df <- read.csv("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/codeexports/E1_E2_forcomparison/redo/importLocationFig.csv") %>%
+  filter(group ==  "E1_DUOD - E1_IL" |
+           group == "E1_IL - E1_DUOD" |
+           group == "E1_DUOD - E1_CEC" |
+           group == "E1_CEC - E1_DUOD" |
+           group == "E1_IL - E1_CEC" |
+           group == "E1_CEC - E1_IL" |
+         group ==  "E2_DUOD - E2_IL" |
+           group == "E2_IL - E2_DUOD" |
+           group == "E2_DUOD - E2_CEC" |
+           group == "E2_CEC - E2_DUOD" |
+           group == "E2_IL - E2_CEC" |
+           group == "E2_CEC - E2_IL" | #edited from here down
+           group == "E2_DUOD - E1_CEC" |
+           group == "E2_IL - E1_CEC" |
+           group == "E2_DUOD - E1_IL" |
+           group == "E2_CEC - E1_IL" |
+           group == "E2_IL - E1_DUOD" |
+           group == "E2_CEC - E1_DUOD")%>%
+ mutate(Differentially_Abundant_Group = factor(Differentially_Abundant_Group, levels = c("E1_DUOD","E1_IL", "E1_CEC", "E2_DUOD","E2_IL", "E2_CEC"))) %>%
+ mutate(Differentially_Abundant_Location = factor(Differentially_Abundant_Location, levels = c("DUOD","IL", "CEC"))) %>%
+ mutate(taxon = factor(taxon, levels = c(
+"ASV8",
+"ASV23",
+"ASV330",
+"ASV14",
+"ASV90",
+"ASV31",
+"ASV11",
+"ASV6",
+"ASV27",
+"ASV5",
+"ASV17",
+"ASV78",
+"ASV131",
+"ASV1",
+"ASV21",
+"ASV72",
+"ASV15",
+"ASV61",
+"ASV114",
+"ASV9",
+"ASV13",
+"ASV270",
+"ASV18",
+"ASV44",
+"ASV16",
+"ASV82",
+"ASV42",
+"ASV239")))
+
 ```
 
-there were 10 ASVs that are differentially abundant in the cecum of mice fed the synthetic diet by percent protein.
-E1_cec
-E1_2.5P vs E1_10P: ASV35, ASV115, ASV149, ASV224 is differentially abundant in E1_10P; ASV90, ASV160 is differentially abundant in E1_2.5P
-E1_5P vs E1_2.5P: ASV20, ASV54, ASV115 is differentially abundant in E1_5P; ASV 199 is differentially 
-abundant in E1_2.5P
-E1_5P vs E1_10P: no ASVs differentially abundant identified
-
-
-
-Save the df you created
+change color
 ```{r}
-#read in your EDITED DF csv: 
-E1_cec_by_Percent_Protein_df_res_pair <- read.csv("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E1_cec_by_Percent_Protein_df_res_pair_edit.csv")
-#change name so target_ids match on both files
-names(E1_cec_by_Percent_Protein_df_res_pair)[2] ="taxon" 
+#first you want to factor your items. These are the names of the Location in the order I want them to be every time. 
+E1vsE2_LOCATION_df$Differentially_Abundant_Location <-factor(E1vsE2_LOCATION_df$Differentially_Abundant_Location, levels=c("DUOD","IL", "CEC"))
 
-#match to taxonomy
-Taxonomy_classification <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/DADA2_output/ALL_taxa.csv") #if this doesn't load be sure to dowload the file from the cloud, then it will work
-#change name so target_ids match on both files
-names(Taxonomy_classification)[1] ="taxon"
+#now create an object that is a list of colors in a certain order.The colors I chose are "color-blind friendly":
+LocationScale <- c("#440a48","#47da7a","#dba0ff")
+#scales::show_col(LocationScale)
 
-#now we need to get our DF results and join it with our Taxonomy results from DADA2 (combining two data frames)
-#we only want to keep the genes that showed up with gapmind, we don't need the other genes that showed up
-Part_DF <- Taxonomy_classification %>% 
-  inner_join (E1_cec_by_Percent_Protein_df_res_pair, by = "taxon")
-
-write.csv(Part_DF,"/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E1_CEC_PROTEIN_DF_RES_PAIR_AND_Taxonomy.csv") # went in here and edited file to my liking. That is what I will be using for the figures.  
-
-```
-
-Now lets repeat but for E2 tests:
-
-ANCOM
-Analysis of Compositions of Microbiomes with Bias Correction (ANCOM-BC) (Lin and Peddada 2020) is a methodology of differential abundance (DA) analysis for microbial absolute abundances. ANCOM-BC estimates the unknown sampling fractions, corrects the bias induced by their differences through a log linear regression model including the estimated sampling fraction as an offset terms, and identifies taxa that are differentially abundant according to the variable of interest. For more details, please refer to the ANCOM-BC paper.
-official tutorial: https://bioconductor.org/packages/release/bioc/vignettes/ANCOMBC/inst/doc/ANCOMBC2.html
-
-https://bioconductor.org/packages/devel/bioc/vignettes/ANCOMBC/inst/doc/ANCOMBC.html
-
-a helpful tutorial: https://www.yanh.org/2021/01/01/microbiome-r/#differential-abundance-analysis
-
-ANCOM manual: https://bioconductor.org/packages/release/bioc/manuals/ANCOMBC/man/ANCOMBC.pdf
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(message = FALSE, warning = FALSE, comment = NA, 
-                      fig.width = 6.25, fig.height = 5)
-library(ANCOMBC)
-library(tidyverse)
-library(caret)
-library(DT)
-options(DT.options = list(
-  initComplete = JS("function(settings, json) {",
-  "$(this.api().table().header()).css({'background-color': 
-  '#000', 'color': '#fff'});","}")))
-```
-
-#LOAD OTHER PACKAGES THAT MIGHT BE USEFUL
-```{r}
-#load packages
-# = this package is definitely needed
-library(BiocManager)
-library(phyloseq) #
-library(ggplot2) #
-library(randomForest)
-library(vegan)
-library(caret)
-library(gridExtra) #
-library(ggpubr) 
-library(ggthemes) #
-library(vegan) #
-library(MASS)
-library(cluster)
-library(RColorBrewer) #
-library(grid)
-library(cooccur)
-library(igraph)
-library(Hmisc)
-#library(minerva)
-library(parallel)
-library(corrplot)
-library(tidyverse) #
-library(plyr);library(dplyr) #
-library(tidyr) #
-library(usdm) #
-library(decontam) #
-library(ecodist) #
-library(betapart) #
-#library(psych)
-#library(ggbiplot)
-library(ANCOMBC) #
-library(DT) #
-library(gplots) #
-library(remotes)
-library(metagMisc)
-library(iNEXT)
-library("DESeq2")
-packageVersion("DESeq2")
-library("reshape2")
-library("remotes")
-library("phyloseq.extended")
-#library(ggvegan) 
-#library(ggpubfigs)
-#library(agricolae) #this package is not compatable with this version of R, if we really need it we will need to install new version of package
-library(RColorBrewer)
-library(scales)
-library("devtools")
-
-theme_set(theme_bw()) #sets ggplot theme
-```
-
-
-#load metadata
-```{r}
-Meta <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/E1_E2_Meta_ALL.csv") #you should have 333 total samples
-row.names(Meta) <- Meta$Sample_ID
-```
-
-#read in ps objects
-```{r}
-ps_raw <- readRDS("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/DADA2_output/clean_ps.rds") #raw but with choloro,mito, low reads (less than 2000), and sample duplicates removed
-ps_all <- readRDS("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/RarefyOutput/ps_rare.rds") #this is my phyloseq object I will be using for the majority of my analysis. It contains all samples from E1 and E2 (duplicates not included) and has been rarefied at lib size of 8000.
-sample_data(ps_raw) <- Meta #If you beed to update your meta sheet, this is how to do it without dunning dada2 again to create a whole new ps
-sample_data(ps_all) <- Meta #If you beed to update your meta sheet, this is how to do it without dunning dada2 again to create a whole new ps
+#now we want to merge the two. We are taking the order from the locations and telling it that it needs to match the order from the cbPalette.
+names(LocationScale) <- levels(E1vsE2_LOCATION_df$Differentially_Abundant_Location)
+#Have you ever used the scale_colour_manual command? Now we can combine that command and all of the stuff we want in it into a new object, LocationColors. At the end of your ggplot code, just add a +LocationColors (or whatever you decide to name it), and it should pull the colors you made! 
+LocationColors <- scale_colour_manual(name="Location", values=LocationScale)
 ```
 
 
 ```{r}
-#read in un-normalized- unrarefied phyloseq object from rds (ANCOM normalizes for you, and if you give it normalized data it will give bias)
-#make relevant subsets
+#first you want to factor your items. These are the names of the Location in the order I want them to be every time. 
+E1vsE2_LOCATION_df$LocationvsLocation <-factor(E1vsE2_LOCATION_df$LocationvsLocation, levels=c("DUODvsIL","CECvsIL", "DUODvsCEC"))
 
-### Make new phyloseq object of just E1, no duplicates
-E1_ps_raw <- subset_samples(ps_raw, Experiment=="E1")
-
-
-#Subset by E1 2.5P,5P, 10P only to compare to E2; no duplicates
-ps_raw_E1_forcomparison <- subset_samples(E1_ps_raw, Percent_Protein %in% c("2.5P", "5P", "10P"))
-ps_raw_E1_forcomparison <- subset_samples(ps_raw_E1_forcomparison, Location %in% c("Duodenum", "Ileum", "Cecum"))
-ps_raw_E1_forcomparison
-
-#Subset by E1 and E2 2.5P,5P, 10P; no duplicates
-ps_raw_E1_E2_forcomparison <- subset_samples(ps_raw, Percent_Protein %in% c("2.5P", "5P", "10P"))
-ps_raw_E1_E2_forcomparison <- subset_samples(ps_raw_E1_E2_forcomparison, Location %in% c("Duodenum", "Ileum", "Cecum"))
-ps_raw_E1_E2_forcomparison
-
-
-### Make new phyloseq object of just E2, no duplicates
-E2_ps_raw <- subset_samples(ps_raw, Experiment=="E2")   
-
-
-#Subset by E1_E2_Location
-ps_raw_E1_E2_duod <- subset_samples(ps_raw_E1_E2_forcomparison, Location %in% c("Duodenum"))
-ps_raw_E1_E2_ile <- subset_samples(ps_raw_E1_E2_forcomparison, Location %in% c("Ileum"))
-ps_raw_E1_E2_cec <- subset_samples(ps_raw_E1_E2_forcomparison, Location %in% c("Cecum"))
-
-#Subset by Experiment and by Location
-ps_raw_E1_duod <- subset_samples(ps_raw_E1_forcomparison, Location %in% c("Duodenum"))
-ps_raw_E1_ile <- subset_samples(ps_raw_E1_forcomparison, Location %in% c("Ileum"))
-ps_raw_E1_cec <- subset_samples(ps_raw_E1_forcomparison, Location %in% c("Cecum"))
-ps_raw_E2_duod <- subset_samples(E2_ps_raw, Location %in% c("Duodenum"))
-ps_raw_E2_ile <- subset_samples(E2_ps_raw, Location %in% c("Ileum"))
-ps_raw_E2_cec <- subset_samples(E2_ps_raw, Location %in% c("Cecum"))
-
-```
-
-Now lets look at whether we can see %protein differences within each gut section
-```{r}
-output = ancombc2(
-  ps_raw_E2_duod,
-  assay_name = NULL,
-  tax_level = NULL, #keep null if you want at ASV level
-  fix_formula= "Exp_Diet",
-  rand_formula = NULL,
-  p_adj_method = "holm",
-  prv_cut = 0.1,
-  lib_cut = 0,
-  s0_perc = 0.05,
-  group = "Exp_Diet", #leave as null if group variable of interest contains only two categories 
-  struc_zero = FALSE,
-  neg_lb = FALSE,
-  alpha = 0.05,
-  n_cl = 1,
-  verbose = FALSE,
-  global = TRUE,
-  pairwise = TRUE,
-  dunnet = TRUE,
-  trend = FALSE,
-  iter_control = list(tol = 0.01, max_iter = 20, verbose = FALSE),
-  em_control = list(tol = 1e-05, max_iter = 100),
-  lme_control = lme4::lmerControl(),
-  mdfdr_control = list(fwer_ctrl_method = "holm", B = 100),
-  trend_control = list(contrast = NULL, node = NULL, solver = "ECOS", B = 100)
-)
-```
-
-Save the output
-```{r}
-#The primary output of the ANCOM-BC2 methodology (res) identifies taxa with differential abundance based on the chosen covariate. The results include: 1) log fold changes, 2) standard errors, 3) test statistics, 4) p-values, 5) adjusted p-values, 6) indicators denoting whether the taxon is differentially abundant (TRUE) or not (FALSE), and 7) indicators denoting whether the taxon passed the sensitivity analysis (TRUE) or not (FALSE).
-
-res_pair = output$res_pair
-saveRDS(res_pair, "/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E2_duod_by_Percent_Protein_res_pair.rds")
-E2_duod_by_Percent_Protein_res_pair <- readRDS("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E2_duod_by_Percent_Protein_res_pair.rds")
-```
-
-
-##ANCOM-BC2 pairwise directional test
-ANCOM-BC2 pairwise directional test aims to determine taxa that are differentially abundant between any pair of two groups across three or more experimental groups, while controlling the mdFDR.
-
-```{r}
-#save as csv 
-write.csv(E2_duod_by_Percent_Protein_res_pair, "/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E2_duod_by_Percent_Protein_res_pair_edit.csv")
-
-```
-
-
-
-
-
-#E2_PROTEIN_in duod
-ANCOMBC2
-pairwise comparisons by experiment and PROTEIN
-```{r}
-#create your data frame for log fold change of pairwise comparisons for dot plot! We will use this to graph dot plots of bargraphs
-df_res_pair = E2_duod_by_Percent_Protein_res_pair %>%
-  dplyr::filter(diff_Exp_DietE2_2.5P == 1) %>%
-  mutate(lfc_E2_2.5P = ifelse(diff_Exp_DietE2_2.5P == 1, 
-                              lfc_Exp_DietE2_2.5P, 0)) %>%
-  transmute(taxon,
-            lfc = lfc_E2_2.5P,
-            se = se_Exp_DietE2_2.5P,
-            p_val= p_Exp_DietE2_2.5P,
-            group = "E2_2.5P - E2_10P") %>%
-  
-  bind_rows(
-    E2_duod_by_Percent_Protein_res_pair %>%
-      dplyr::filter(diff_Exp_DietE2_5P == 1) %>%
-      mutate(lfc_E2_5P = ifelse(diff_Exp_DietE2_5P == 1, 
-                                lfc_Exp_DietE2_5P, 0)) %>%
-      transmute(taxon,
-                lfc = lfc_E2_5P,
-                se = se_Exp_DietE2_5P,
-                p_val = p_Exp_DietE2_5P,
-                group = "E2_5P - E2_10P")
-  ) %>%                 
-  bind_rows(
-    E2_duod_by_Percent_Protein_res_pair %>%
-      dplyr::filter(diff_Exp_DietE2_5P_Exp_DietE2_2.5P == 1) %>%
-      mutate(lfc_E2_5P_E2_2.5P = ifelse(diff_Exp_DietE2_5P_Exp_DietE2_2.5P == 1, 
-                                        lfc_Exp_DietE2_5P_Exp_DietE2_2.5P, 0)) %>%
-      transmute(taxon,
-                lfc = lfc_E2_5P_E2_2.5P,
-                se = se_Exp_DietE2_5P_Exp_DietE2_2.5P,
-                p_val = p_Exp_DietE2_5P_Exp_DietE2_2.5P,
-                group = "E2_5P - E2_2.5P")
+fig_trend = E1vsE2_LOCATION_df %>% 
+  ggplot(aes(x = lfc_figure, y = taxon, color = Differentially_Abundant_Location, shape = Differentially_Abundant_Experiment)) + 
+  geom_point(size = 4, position = position_dodge()) +
+  geom_errorbar(
+    aes(xmin = lfc_figure - se, xmax = lfc_figure + se), 
+    width = .2) +
+  geom_vline(aes(xintercept = 0), linetype = "dashed")+
+  facet_wrap(~LocationvsLocation, strip.position="top") +
+  labs(x = "Log Fold Change", y = "ASV", title = "Differentially Abundant Taxa") +
+  LocationColors +
+  scale_shape_manual(
+    values = c("E1" = 16,  # circle
+               "E2" = 17)  # triangle
+  ) +
+  scale_x_continuous(limits=c(-9, 9)) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    title =element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12, angle = 90),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text = element_text(size=6),
+    strip.text.y = element_text(color="black", size=12, angle=90),
+    legend.title = element_text(color="black", size=14),
+    legend.text = element_text(color="black", size=12),
+    legend.key.size = unit(1, 'cm'),
+    legend.position = "bottom",
+    strip.background = element_blank(), #to remove facet wrap title
+    axis.title.x = element_text(color="black", size=12),
+    axis.title.y = element_text(color="black", size=12, angle=90),
+    panel.grid.major = element_blank(), # switch off major gridlines
+    panel.grid.minor = element_blank()# switch off minor gridlines
   )
-df_res_pair$group = factor(df_res_pair$group, 
-                           levels = c("E2_2.5P - E2_10P",
-                                      "E2_5P - E2_10P",
-                                      "E2_5P - E2_2.5P"
-                           ))
-
-
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+#pdf("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/plots/E1_E2_Location_redo.pdf", height = 11, width = 8)
+fig_trend
+#dev.off()
 ```
 
-Save the df you created
-```{r}
-write.csv(df_res_pair, "/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E2_duod_by_Percent_Protein_df_res_pair.csv") #ADD IN OTHER CATEGORIES YOU WANT TO GRAPH 
-```
-
-there was 1 ASV that was differentially abundant in the duodenum of mice fed the seminatural diet by percent protein.
-E2_duod
-E2_2.5P vs E2_10P: ASV5 is differentially abundant in E2_2.5P
-E2_5P vs E2_2.5P: no ASVs differentially abundant identified
-E2_5P vs E2_10P: no ASVs differentially abundant identified
-
-merge with DADA2 taxonomy assignment
-```{r}
-#read in your EDITED DF csv: 
-E2_duod_by_Percent_Protein_df_res_pair <- read.csv("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E2_duod_by_Percent_Protein_df_res_pair_edit.csv")
-#change name so target_ids match on both fduods
-names(E2_duod_by_Percent_Protein_df_res_pair)[2] ="taxon" 
-
-#match to taxonomy
-Taxonomy_classification <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/DADA2_output/ALL_taxa.csv") #if this doesn't load be sure to dowload the file from the cloud, then it will work
-#change name so target_ids match on both files
-names(Taxonomy_classification)[1] ="taxon"
-
-#now we need to get our DF results and join it with our Taxonomy results from DADA2 (combining two data frames)
-#we only want to keep the genes that showed up with gapmind, we don't need the other genes that showed up
-Part_DF <- Taxonomy_classification %>% 
-  inner_join (E2_duod_by_Percent_Protein_df_res_pair, by = "taxon")
-
-write.csv(Part_DF,"/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E2_DUOD_PROTEIN_DF_RES_PAIR_AND_Taxonomy.csv") # went in here and edited file to my liking. That is what I will be using for the figures.  
-
-``` 
-
-
-
-Now lets look at whether we can see %protein differences in the Ileum
+#trying to separate out overlapping pointd
 
 ```{r}
-output = ancombc2(
-  ps_raw_E2_ile,
-  assay_name = NULL,
-  tax_level = NULL, #keep null if you want at ASV level
-  fix_formula= "Exp_Diet",
-  rand_formula = NULL,
-  p_adj_method = "holm",
-  prv_cut = 0.1,
-  lib_cut = 0,
-  s0_perc = 0.05,
-  group = "Exp_Diet", #leave as null if group variable of interest contains only two categories 
-  struc_zero = FALSE,
-  neg_lb = FALSE,
-  alpha = 0.05,
-  n_cl = 1,
-  verbose = FALSE,
-  global = TRUE,
-  pairwise = TRUE,
-  dunnet = TRUE,
-  trend = FALSE,
-  iter_control = list(tol = 0.01, max_iter = 20, verbose = FALSE),
-  em_control = list(tol = 1e-05, max_iter = 100),
-  lme_control = lme4::lmerControl(),
-  mdfdr_control = list(fwer_ctrl_method = "holm", B = 100),
-  trend_control = list(contrast = NULL, node = NULL, solver = "ECOS", B = 100)
-)
-```
+#first you want to factor your items. These are the names of the Location in the order I want them to be every time. 
+E1vsE2_LOCATION_df$LocationvsLocation <-factor(E1vsE2_LOCATION_df$LocationvsLocation, levels=c("DUODvsIL","CECvsIL", "DUODvsCEC"))
 
-Save the output
-```{r}
-#The primary output of the ANCOM-BC2 methodology (res) identifies taxa with differential abundance based on the chosen covariate. The results include: 1) log fold changes, 2) standard errors, 3) test statistics, 4) p-values, 5) adjusted p-values, 6) indicators denoting whether the taxon is differentially abundant (TRUE) or not (FALSE), and 7) indicators denoting whether the taxon passed the sensitivity analysis (TRUE) or not (FALSE).
+library(dplyr)
 
-res_pair = output$res_pair
-saveRDS(res_pair, "/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E2_ile_by_Percent_Protein_res_pair.rds")
-E2_ile_by_Percent_Protein_res_pair <- readRDS("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E2_ile_by_Percent_Protein_res_pair.rds")
-```
+tolerance <- 6.0      # expand this to 0.15 or 0.2 if needed
+jitter_strength <- 0.5   # how far to push E1 left / E2 right
 
-
-##ANCOM-BC2 pairwise directional test
-ANCOM-BC2 pairwise directional test aims to determine taxa that are differentially abundant between any pair of two groups across three or more experimental groups, while controlling the mdFDR.
-
-
-#E2_PROTEIN_in ile
-ANCOMBC2 pairwise comparisons 
-```{r}
-#create your data frame for log fold change of pairwise comparisons for dot plot! We will use this to graph dot plots of bargraphs
-df_res_pair = E2_ile_by_Percent_Protein_res_pair %>%
-  dplyr::filter(diff_Exp_DietE2_2.5P == 1) %>%
-  mutate(lfc_E2_2.5P = ifelse(diff_Exp_DietE2_2.5P == 1, 
-                              lfc_Exp_DietE2_2.5P, 0)) %>%
-  transmute(taxon,
-            lfc = lfc_E2_2.5P,
-            se = se_Exp_DietE2_2.5P,
-            p_val= p_Exp_DietE2_2.5P,
-            group = "E2_2.5P - E2_10P") %>%
-  
-  bind_rows(
-    E2_ile_by_Percent_Protein_res_pair %>%
-      dplyr::filter(diff_Exp_DietE2_5P == 1) %>%
-      mutate(lfc_E2_5P = ifelse(diff_Exp_DietE2_5P == 1, 
-                                lfc_Exp_DietE2_5P, 0)) %>%
-      transmute(taxon,
-                lfc = lfc_E2_5P,
-                se = se_Exp_DietE2_5P,
-                p_val = p_Exp_DietE2_5P,
-                group = "E2_5P - E2_10P")
-  ) %>%                 
-  bind_rows(
-    E2_ile_by_Percent_Protein_res_pair %>%
-      dplyr::filter(diff_Exp_DietE2_5P_Exp_DietE2_2.5P == 1) %>%
-      mutate(lfc_E2_5P_E2_2.5P = ifelse(diff_Exp_DietE2_5P_Exp_DietE2_2.5P == 1, 
-                                        lfc_Exp_DietE2_5P_Exp_DietE2_2.5P, 0)) %>%
-      transmute(taxon,
-                lfc = lfc_E2_5P_E2_2.5P,
-                se = se_Exp_DietE2_5P_Exp_DietE2_2.5P,
-                p_val = p_Exp_DietE2_5P_Exp_DietE2_2.5P,
-                group = "E2_5P - E2_2.5P")
+E1vsE2_LOCATION_df <- E1vsE2_LOCATION_df %>%
+  group_by(taxon) %>%
+  mutate(
+    # Count how many points have x-values VERY close
+    n_overlaps = sapply(lfc_figure, function(x)
+      sum(abs(lfc_figure - x) < tolerance)
+    )
+  ) %>%
+  ungroup() %>%
+  mutate(
+    # jitter only when at least 2 points fall within tolerance
+    jitter_offset = case_when(
+      n_overlaps < 2 ~ 0,
+      Differentially_Abundant_Experiment == "E1" ~ -jitter_strength,
+      Differentially_Abundant_Experiment == "E2" ~  jitter_strength,
+      TRUE ~ 0
+    ),
+    x_jittered = lfc_figure + jitter_offset
   )
-df_res_pair$group = factor(df_res_pair$group, 
-                           levels = c("E2_2.5P - E2_10P",
-                                      "E2_5P - E2_10P",
-                                      "E2_5P - E2_2.5P"
-                           ))
-
-
-```
-
-Save the df you created
-```{r}
-write.csv(df_res_pair, "/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E2_ile_by_Percent_Protein_df_res_pair.csv") #ADD IN OTHER CATEGORIES YOU WANT TO GRAPH 
-```
-
-there were 31 ASVs that are differentially abundant in the ileum of mice fed the seminatural diet by percent protein.
-E2_ile
-E2_2.5P vs E2_10P: ASV5, ASV6, ASV9, ASV11, ASV14, ASV16, ASV17, ASV25, ASV27, ASV30, ASV37, ASV43, ASV64, ASV76, ASV189, ASV198, ASV265, ASV267 are differentially abundant in E2_2.5P; and ASV96, ASV153, ASV112 are differentially abundant in E2_10P
-E2_5P vs E2_2.5P: ASV11, ASV25, ASV39, ASV86 are differentially abundant in E2_5P; ASV17
-ASV64, ASV66, ASV189, ASV267 is differentially abundant in E2_5P
-E2_5P vs E2_10P: no ASVs differentially abundant identified
-
-merge with DADA2 taxonomy assignment
-```{r}
-#read in your EDITED DF csv: 
-E2_ile_by_Percent_Protein_df_res_pair <- read.csv("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E2_ile_by_Percent_Protein_df_res_pair_edit.csv")
-#change name so target_ids match on both files
-names(E2_ile_by_Percent_Protein_df_res_pair)[2] ="taxon" 
-
-#match to taxonomy
-Taxonomy_classification <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/DADA2_output/ALL_taxa.csv") #if this doesn't load be sure to dowload the file from the cloud, then it will work
-#change name so target_ids match on both files
-names(Taxonomy_classification)[1] ="taxon"
-
-#now we need to get our DF results and join it with our Taxonomy results from DADA2 (combining two data frames)
-#we only want to keep the genes that showed up with gapmind, we don't need the other genes that showed up
-Part_DF <- Taxonomy_classification %>% 
-  inner_join (E2_ile_by_Percent_Protein_df_res_pair, by = "taxon")
-
-write.csv(Part_DF,"/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E2_ILE_PROTEIN_DF_RES_PAIR_AND_Taxonomy.csv") # went in here and edited file to my liking. That is what I will be using for the figures.  
-
 ```
 
 
 
-#E2_PROTEIN_in cec
-ANCOMBC2 pairwise comparisons
+#plot it with jitter
 ```{r}
-output = ancombc2(
-  ps_raw_E2_cec,
-  assay_name = NULL,
-  tax_level = NULL, #keep null if you want at ASV level
-  fix_formula= "Exp_Diet",
-  rand_formula = NULL,
-  p_adj_method = "holm",
-  prv_cut = 0.1,
-  lib_cut = 0,
-  s0_perc = 0.05,
-  group = "Exp_Diet", #leave as null if group variable of interest contains only two categories 
-  struc_zero = FALSE,
-  neg_lb = FALSE,
-  alpha = 0.05,
-  n_cl = 1,
-  verbose = FALSE,
-  global = TRUE,
-  pairwise = TRUE,
-  dunnet = TRUE,
-  trend = FALSE,
-  iter_control = list(tol = 0.01, max_iter = 20, verbose = FALSE),
-  em_control = list(tol = 1e-05, max_iter = 100),
-  lme_control = lme4::lmerControl(),
-  mdfdr_control = list(fwer_ctrl_method = "holm", B = 100),
-  trend_control = list(contrast = NULL, node = NULL, solver = "ECOS", B = 100)
-)
-```
-
-Save the output
-```{r}
-#The primary output of the ANCOM-BC2 methodology (res) identifies taxa with differential abundance based on the chosen covariate. The results include: 1) log fold changes, 2) standard errors, 3) test statistics, 4) p-values, 5) adjusted p-values, 6) indicators denoting whether the taxon is differentially abundant (TRUE) or not (FALSE), and 7) indicators denoting whether the taxon passed the sensitivity analysis (TRUE) or not (FALSE).
-
-res_pair = output$res_pair
-saveRDS(res_pair, "/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E2_cec_by_Percent_Protein_res_pair.rds")
-E2_cec_by_Percent_Protein_res_pair <- readRDS("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E2_cec_by_Percent_Protein_res_pair.rds")
-```
-
-
-##ANCOM-BC2 pairwise directional test
-ANCOM-BC2 pairwise directional test aims to determine taxa that are differentially abundant between any pair of two groups across three or more experimental groups, while controlling the mdFDR.
-
-
-#E2_PROTEIN_in cecum
-ANCOMBC2
-pairwise comparisons by experiment and PROTEIN
-```{r}
-#create your data frame for log fold change of pairwise comparisons for dot plot! We will use this to graph dot plots of bargraphs
-df_res_pair = E2_cec_by_Percent_Protein_res_pair %>%
-  dplyr::filter(diff_Exp_DietE2_2.5P == 1) %>%
-  mutate(lfc_E2_2.5P = ifelse(diff_Exp_DietE2_2.5P == 1, 
-                              lfc_Exp_DietE2_2.5P, 0)) %>%
-  transmute(taxon,
-            lfc = lfc_E2_2.5P,
-            se = se_Exp_DietE2_2.5P,
-            p_val= p_Exp_DietE2_2.5P,
-            group = "E2_2.5P - E2_10P") %>%
+fig_trend = E1vsE2_LOCATION_df %>% 
+  ggplot(aes(x = x_jittered, 
+             y = taxon, 
+             color = Differentially_Abundant_Location,
+             shape = Differentially_Abundant_Experiment)) +
   
-  bind_rows(
-    E2_cec_by_Percent_Protein_res_pair %>%
-      dplyr::filter(diff_Exp_DietE2_5P == 1) %>%
-      mutate(lfc_E2_5P = ifelse(diff_Exp_DietE2_5P == 1, 
-                                lfc_Exp_DietE2_5P, 0)) %>%
-      transmute(taxon,
-                lfc = lfc_E2_5P,
-                se = se_Exp_DietE2_5P,
-                p_val = p_Exp_DietE2_5P,
-                group = "E2_5P - E2_10P")
-  ) %>%                 
-  bind_rows(
-    E2_cec_by_Percent_Protein_res_pair %>%
-      dplyr::filter(diff_Exp_DietE2_5P_Exp_DietE2_2.5P == 1) %>%
-      mutate(lfc_E2_5P_E2_2.5P = ifelse(diff_Exp_DietE2_5P_Exp_DietE2_2.5P == 1, 
-                                        lfc_Exp_DietE2_5P_Exp_DietE2_2.5P, 0)) %>%
-      transmute(taxon,
-                lfc = lfc_E2_5P_E2_2.5P,
-                se = se_Exp_DietE2_5P_Exp_DietE2_2.5P,
-                p_val = p_Exp_DietE2_5P_Exp_DietE2_2.5P,
-                group = "E2_5P - E2_2.5P")
+  geom_point(size = 4) +
+  
+  geom_errorbar(
+    aes(xmin = x_jittered - se, xmax = x_jittered + se),
+    width = .2
+  ) +
+  
+  geom_vline(aes(xintercept = 0), linetype = "dashed") +
+  facet_wrap(~LocationvsLocation, strip.position="top") +
+  labs(x = "Log Fold Change", y = "ASV", title = "Differentially Abundant Taxa") +
+  LocationColors +
+  scale_shape_manual(values = c("E1" = 16, "E2" = 17)) +
+  scale_x_continuous(limits = c(-9, 9)) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    title = element_text(size=18, face='bold'),
+    axis.text.x = element_text(color="black", size=12, angle = 90),
+    axis.text.y = element_text(color="black", size=12),
+    strip.text = element_text(size=6),
+    strip.text.y = element_text(color="black", size=12, angle=90),
+    legend.title = element_text(color="black", size=14),
+    legend.text = element_text(color="black", size=12),
+    legend.key.size = unit(1, 'cm'),
+    legend.position = "bottom",
+    strip.background = element_blank(),
+    axis.title.x = element_text(color="black", size=12),
+    axis.title.y = element_text(color="black", size=12, angle=90),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
   )
-df_res_pair$group = factor(df_res_pair$group, 
-                           levels = c("E2_2.5P - E2_10P",
-                                      "E2_5P - E2_10P",
-                                      "E2_5P - E2_2.5P"
-                           ))
-
-
-```
-
-Save the df you created
-```{r}
-write.csv(df_res_pair, "/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E2_cec_by_Percent_Protein_df_res_pair.csv") #ADD IN OTHER CATEGORIES YOU WANT TO GRAPH 
-```
-
-there were 8 ASVs that are differentially abundant in the cecum of mice fed the semi-natural diet by percent protein.
-E2_cec
-
-E2_2.5P vs E2_10P: ASV193, ASV294, ASV521, ASV828 is differentially abundant in E2_10P; ASV5, ASV17 is differentially abundant in E2_2.5P
-E2_5P vs E2_2.5P: ASV18 is differentially abundant in E2_5P
-E2_5P vs E2_10P: ASV5 is differentially abundant in E2_5P
-
-
-
-Save the df you created
-```{r}
-#read in your EDITED DF csv: 
-E2_cec_by_Percent_Protein_df_res_pair <- read.csv("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E2_cec_by_Percent_Protein_df_res_pair_edit.csv")
-#change name so target_ids match on both files
-names(E2_cec_by_Percent_Protein_df_res_pair)[2] ="taxon" 
-
-#match to taxonomy
-Taxonomy_classification <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/DADA2_output/ALL_taxa.csv") #if this doesn't load be sure to dowload the file from the cloud, then it will work
-#change name so target_ids match on both files
-names(Taxonomy_classification)[1] ="taxon"
-
-#now we need to get our DF results and join it with our Taxonomy results from DADA2 (combining two data frames)
-#we only want to keep the genes that showed up with gapmind, we don't need the other genes that showed up
-Part_DF <- Taxonomy_classification %>% 
-  inner_join (E2_cec_by_Percent_Protein_df_res_pair, by = "taxon")
-
-write.csv(Part_DF,"/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/E2_CEC_PROTEIN_DF_RES_PAIR_AND_Taxonomy.csv") # went in here and edited file to my liking. That is what I will be using for the figures.  
-
+#CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
+pdf("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/plots/E1_E2_Location_redo.pdf", height = 11, width = 8)
+fig_trend
+#dev.off()
 ```
 
 
 
-Yay! you did it, now lets make some figures to visualize our results:
+
+
+
+
+Now by percent protein:
+
+E1 E2 Protein in each Gut Section
 
 lets see if we can't join E1 and E2 Protein results together!
-DUOD
+DUOD, 
+#skip b/c we didn't get any differentially abundant ASVs in E1 duod or E2 DUOD
 ```{r}
 E1vsE2_DUOD_Protein_df <- read.csv("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/combined_DF_figs/edit_E1_E2_DUOD_PROTEIN_DF.csv") %>%
   filter(group ==  "E1_2.5P - E1_5P" |
@@ -4805,7 +4358,7 @@ dev.off()
 
 Cec
 ```{r}
-E1vsE2_CEC_Protein_df <- read.csv("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/combined_DF_figs/edit_E1_E2_CECUM_PROTEIN_DF.csv") %>%
+E1vsE2_CEC_Protein_df <- read.csv("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/combined_DF_figs/redo/edit_E1_E2_CECUM_PROTEIN_DF_redo.csv") %>%
   filter(group ==  "E1_2.5P - E1_5P" |
            group == "E1_5P - E1_2.5P" |
            group == "E1_2.5P - E1_10P" |
@@ -4821,20 +4374,19 @@ E1vsE2_CEC_Protein_df <- read.csv("/Users/connermertz/vlab Dropbox/Vesbach Lab/C
  mutate(Differentially_Abundant_Group = factor(Differentially_Abundant_Group, levels = c("E1_2.5P","E1_5P", "E1_10P", "E2_2.5P","E2_5P", "E2_10P"))) %>%
  mutate(Differentially_Abundant_Protein = factor(Differentially_Abundant_Protein, levels = c("2.5P","5P", "10P"))) %>%
  mutate(taxon = factor(taxon, levels = c("ASV828",
-"ASV115",
 "ASV20",
 "ASV35",
-"ASV521",
 "ASV54",
+"ASV115",
+"ASV165",
+"ASV242",
 "ASV193",
 "ASV90",
 "ASV294",
-"ASV17",
 "ASV5",
-"ASV199",
+"ASV17",
 "ASV224",
 "ASV160",
-"ASV18",
 "ASV149")))
 
 ```
@@ -4856,6 +4408,9 @@ ProteinColors.3<- scale_colour_manual(name="Protein", values= Protein_Scale)
 
 CEC by percent protein
 ```{r}
+#first you want to factor your items.  
+E1vsE2_CEC_Protein_df$PercentProteinvsPercentProtein <-factor(E1vsE2_CEC_Protein_df$PercentProteinvsPercentProtein, levels = c("5Pvs2.5P","2.5Pvs10P", "5Pvs10P"))
+
 fig_trend = E1vsE2_CEC_Protein_df %>% 
   ggplot(aes(x = lfc, y = taxon, color = Differentially_Abundant_Protein, shape = Differentially_Abundant_Experiment)) + 
   geom_point(size = 4, position = position_dodge()) +
@@ -4866,7 +4421,11 @@ fig_trend = E1vsE2_CEC_Protein_df %>%
   facet_wrap(~PercentProteinvsPercentProtein, strip.position="top") +
   labs(x = "Log Fold Change", y = "ASV", title = "Differentially Abundant Taxa_CEC_") +
   ProteinColors.3 +
-  scale_x_continuous(limits=c(-7, 7)) +
+  scale_shape_manual(
+    values = c("Synthetic" = 16,  # circle
+               "Seminatural" = 17)  # triangle
+  ) +
+  scale_x_continuous(limits=c(-9, 9)) +
   theme_bw() +
   theme(
     plot.title = element_text(hjust = 0.5),
@@ -4886,7 +4445,7 @@ fig_trend = E1vsE2_CEC_Protein_df %>%
     panel.grid.minor = element_blank()# switch off minor gridlines
   )
 #CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
-pdf("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/combined_DF_figs/Plot/E1vsE2_CEC_Protein.pdf", height = 6, width = 10)
+pdf("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/plots/E1vsE2_CEC_Protein_redo.pdf", height = 8, width = 8)
 fig_trend
 dev.off()
 ```
@@ -4897,7 +4456,7 @@ dev.off()
 
 ILE
 ```{r}
-E1vsE2_ILE_Protein_df <- read.csv("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/combined_DF_figs/edit_E1_E2_ILE_PROTEIN_DF.csv") %>%
+E1vsE2_ILE_Protein_df <- read.csv("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/combined_DF_figs/redo/edit_E1_E2_ILE_PROTEIN_DF_redo.csv") %>%
   filter(group ==  "E1_2.5P - E1_5P" |
            group == "E1_5P - E1_2.5P" |
            group == "E1_2.5P - E1_10P" |
@@ -4912,32 +4471,29 @@ E1vsE2_ILE_Protein_df <- read.csv("/Users/connermertz/vlab Dropbox/Vesbach Lab/C
            group == "E2_10P - E2_5P")%>%
   mutate(Differentially_Abundant_Group = factor(Differentially_Abundant_Group, levels = c("E1_2.5P","E1_5P", "E1_10P", "E2_2.5P","E2_5P", "E2_10P"))) %>%
   mutate(Differentially_Abundant_Protein = factor(Differentially_Abundant_Protein, levels = c("2.5P","5P", "10P"))) %>%
-  mutate(taxon = factor(taxon, levels = c("ASV25",
-"ASV267",
+  mutate(taxon = factor(taxon, levels = c("ASV80",
+"ASV7",
+"ASV25",
 "ASV66",
-"ASV80",
 "ASV96",
+"ASV267",
 "ASV14",
-"ASV112",
+"ASV19",
 "ASV265",
 "ASV11",
 "ASV43",
-"ASV6",
-"ASV189",
 "ASV39",
-"ASV27",
-"ASV17",
+"ASV189",
 "ASV5",
+"ASV17",
 "ASV64",
 "ASV153",
 "ASV9",
 "ASV30",
 "ASV16",
 "ASV37",
-"ASV76",
 "ASV86",
-"ASV168",
-"ASV198")))
+"ASV168")))
 
 ```
 
@@ -4958,6 +4514,9 @@ ProteinColors.4<- scale_colour_manual(name="Protein", values= Protein_Scale)
 
 ILE by percent protein
 ```{r}
+#first you want to factor your items.  
+E1vsE2_ILE_Protein_df$PercentProteinvsPercentProtein <-factor(E1vsE2_ILE_Protein_df$PercentProteinvsPercentProtein, levels = c("5Pvs2.5P","2.5Pvs10P", "5Pvs10P"))
+#plot
 fig_trend = E1vsE2_ILE_Protein_df %>% 
   ggplot(aes(x = lfc, y = taxon, color = Differentially_Abundant_Protein, shape = Differentially_Abundant_Experiment)) + 
   geom_point(size = 4, position = position_dodge()) +
@@ -4968,7 +4527,11 @@ fig_trend = E1vsE2_ILE_Protein_df %>%
   facet_wrap(~PercentProteinvsPercentProtein, strip.position="top") +
   labs(x = "Log Fold Change", y = "ASV", title = "Differentially Abundant Taxa_ILE_") +
   ProteinColors.4 +
-  scale_x_continuous(limits=c(-7, 7)) +
+  scale_shape_manual(
+    values = c("Synthetic" = 16,  # circle
+               "Seminatural" = 17)  # triangle
+  ) +
+  scale_x_continuous(limits=c(-9, 9)) +
   theme_bw() +
   theme(
     plot.title = element_text(hjust = 0.5),
@@ -4988,13 +4551,47 @@ fig_trend = E1vsE2_ILE_Protein_df %>%
     panel.grid.minor = element_blank()# switch off minor gridlines
   )
 #CREATE A PDF AND SAVES IT TO THE RIGHT DIRECTORY/FOLDER. 
-pdf("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/combined_DF_figs/Plot/E1vsE2_ILE_Protein.pdf", height = 6, width = 10)
+pdf("/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/ANCOMoutput/ISMERevisions/plots/E1vsE2_ILE_Protein_redo.pdf", height = 9, width = 8)
 fig_trend
 dev.off()
 ```
 
 
 
+
+
+
+
+#maternal effect
+```{r}
+output = ancombc2(
+  ps_raw_E1_E2_forcomparison,
+  assay_name = NULL,
+  tax_level = NULL, #keep null if you want at ASV level
+  fix_formula= "Breeding.pair",
+  rand_formula = NULL,
+  p_adj_method = "holm",
+  prv_cut = 0.1,
+  lib_cut = 0,
+  s0_perc = 0.05,
+  group = "Breeding.pair", #leave as null if group variable of interest contains only two categories 
+  struc_zero = FALSE,
+  neg_lb = FALSE,
+  alpha = 0.05,
+  n_cl = 1,
+  verbose = FALSE,
+  global = TRUE,
+  pairwise = TRUE,
+  dunnet = TRUE,
+  trend = FALSE,
+  iter_control = list(tol = 0.01, max_iter = 20, verbose = FALSE),
+  em_control = list(tol = 1e-05, max_iter = 100),
+  lme_control = lme4::lmerControl(),
+  mdfdr_control = list(fwer_ctrl_method = "holm", B = 100),
+  trend_control = list(contrast = NULL, node = NULL, solver = "ECOS", B = 100)
+)
+```
+#no differentially abundant ASVs present in the entire data set, or within diet type, or within each gut section. 
 
 
 
