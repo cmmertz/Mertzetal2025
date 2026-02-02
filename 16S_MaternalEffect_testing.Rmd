@@ -1,0 +1,416 @@
+---
+title: "Maternal Source Correction Code"
+author: "Conner Mertz"
+date: "2026-01-14"
+output: html_document
+---
+
+We are going to perform some tests to correct for maternal effect. heres the game plan:
+1- PERMANOVA with strata = MotherID
+2- b-RDA with Condition (MotherID)
+3- ComBat (to correct for batch (makeing maternal ID=batch))
+
+Secondary / appeasement analysis
+3- ComBat or removeBatchEffect (clearly labeled as sensitivity)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+"When permutations were constrained within maternal source, diet and gut section remained significant drivers of community structure."
+
+```{r}
+## Load metadata
+#Meta <- read.csv("/Users/connermertz/Documents/Sequence Analysis/E1_E2_All_Samples/E1_E2_Meta_ALL_BACKUP.csv") #you should have 309 total samples
+#row.names(Meta) <- Meta$Sample_ID
+
+Meta <- read.csv("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/E1_E2_Meta_ALL.csv") #you should have 333 total samples
+row.names(Meta) <- Meta$Sample_ID
+
+#sample_data(ps) <- Meta #If you nbeed to update your meta sheet, this is how to do it without dunning dada2 again to create a whole new ps
+```
+
+```{r}
+#load packages
+# = this package is definitely needed
+library(BiocManager)
+library(phyloseq) #
+library(ggplot2) #
+library(randomForest)
+library(vegan)
+library(caret)
+library(gridExtra) #
+library(ggpubr) 
+library(ggthemes) #
+library(vegan) #
+library(MASS)
+library(cluster)
+library(RColorBrewer) #
+library(grid)
+library(cooccur)
+library(igraph)
+library(Hmisc)
+#library(minerva)
+library(parallel)
+library(corrplot)
+library(tidyverse) #
+library(plyr);library(dplyr) #
+library(tidyr) #
+library(usdm) #
+library(decontam) #
+library(ecodist) #
+library(betapart) #
+#library(psych)
+#library(ggbiplot)
+#library(ANCOMBC) #
+library(DT) #
+library(gplots) #
+library(remotes)
+library(metagMisc)
+library(iNEXT)
+library("DESeq2")
+packageVersion("DESeq2")
+library("reshape2")
+library("remotes")
+library("phyloseq.extended")
+#library(ggvegan) 
+#library(ggpubfigs)
+#library(agricolae) #this package is not compatable with this version of R, if we really need it we will need to install new version of package
+library(RColorBrewer)
+library(scales)
+library("devtools")
+
+theme_set(theme_bw()) #sets ggplot theme
+```
+#read in ps objects
+```{r}
+ps_raw <- readRDS("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/DADA2_output/clean_ps.rds") #raw but with choloro,mito, low reads (less than 2000), and sample duplicates removed
+ps_all <- readRDS("/Users/connermertz/Dropbox (vlab)/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/RarefyOutput/ps_rare.rds") #this is my phyloseq object I will be using for the majority of my analysis. It contains all samples from E1 and E2 (duplicates not included) and has been rarefied at lib size of 8000.
+sample_data(ps_raw) <- Meta #If you beed to update your meta sheet, this is how to do it without dunning dada2 again to create a whole new ps
+sample_data(ps_all) <- Meta #If you beed to update your meta sheet, this is how to do it without dunning dada2 again to create a whole new ps
+ps_all <- subset_samples(ps_all, Days_in_study > 95)
+
+```
+
+subset to just include microbiome data
+```{r}
+#Subset by E1 and E2 2.5P,5P, 10P; no duplicates
+E1_E2_forcomparison <- subset_samples(ps_all, Percent_Protein %in% c("2.5P", "5P", "10P"))
+E1_E2_forcomparison <- subset_samples(E1_E2_forcomparison, Location %in% c("Duodenum", "Ileum", "Cecum"))
+
+E1_ps<- subset_samples(E1_E2_forcomparison, Experiment %in% c("E1"))
+E2_ps<- subset_samples(E1_E2_forcomparison, Experiment %in% c("E2"))
+
+
+
+```
+
+
+#convert ps to dataframe and make sure factors are factors
+```{r}
+meta_df <- data.frame(sample_data(E1_E2_forcomparison))
+
+meta_df$Treatment       <- factor(meta_df$Treatment)
+meta_df$Exp_Diet <- factor(meta_df$Exp_Diet)
+meta_df$Percent_Protein   <- factor(meta_df$Percent_Protein)
+meta_df$Location   <- factor(meta_df$Location)
+meta_df$Breeding.Pair   <- factor(meta_df$Breeding.Pair)
+
+colSums(is.na(meta_df[, c("Treatment", "Exp_Diet", "Percent_Protein", "Location", "Breeding.Pair")])) #check for NAs
+
+```
+make sure sample names match up between ps and meta data
+```{r}
+all(rownames(meta_df) == sample_names(E1_E2_forcomparison)) #true
+
+```
+for strata to work breeding pair needs to have at least 2 samples per breeding pair factor
+```{r}
+table(meta_df$Breeding.Pair) #yay, there are 2-18 samples per breeding pair
+
+```
+
+
+Re-run PERMANOVA with maternal source as strata
+```{r}
+ps_rel <- transform_sample_counts(E1_E2_forcomparison, function(x) x / sum(x))
+dist_mat <- phyloseq::distance(ps_rel, method = "bray")
+
+adonis2(
+  dist_mat ~ Treatment + Percent_Protein + Location + Sex,
+  data = meta_df,
+  permutations = 100000,
+  strata = meta_df$Breeding.Pair,
+  by = "margin"
+)
+```
+This performs Permutations restricted within mothers
+- Tests whether diet and gut section explain variation beyond maternal effects
+- Maternal effects are controlled but not removed
+
+```{r}
+adonis2(
+  dist_mat ~ Breeding.Pair,
+  data = meta_df,
+  permutations = 999
+)
+```
+#results:
+#Treatment
+  R² = 0.068
+  pseudo-F = 13.99
+  p = 0.001
+Explains ~6.8% of total community variation, still strong separation within maternal sources, high pseudo-F indicates consistent group separation.
+#Percent Protein
+R² = 0.030
+pseudo-F = 3.06
+p = 0.001
+Smaller effect size (expected for a gradient), still statistically robust and detected after controlling for Treatment, Location, and maternal source. 
+#Location (gut section)
+R² = 0.140
+pseudo-F = 14.4574
+p = 0.001
+Largest explanatory factor, strong biological plausibility, not confounded by maternal source 
+
+test breeding pair on its own
+```{r}
+adonis2(dist_mat ~ Breeding.Pair, data = meta_df, permutations = 999)
+
+```
+
+#Breeding.Pair
+R² = 0.221
+pseudo-F = 2.14
+p = 0.001
+Maternal source explains ~22% of variance, Pseudo-F is low (2.14) relative to experimental factors, and significance is expected with many samples and structured designs. 
+
+so the high R², low pseudo-F observed indicates some shared community similarity within litters, but weak group separation relative to diet and gut location. 
+
+So, Breeding pair explains variance but does not strongly separate groups. While diet and location produce much stronger, consistent shifts. This is why diet/location remain significant within mothers. 
+
+###########
+#lets do a secondary analysis to follow up, 
+this test ensures all variation attributable to maternal source (breeding pair) is removed first, and the remaining variation is then tested for effects of treatment, dietary protein, and gut location.
+
+```{r}
+library(vegan)
+
+cap <- capscale(
+  dist_mat ~ Treatment + Percent_Protein + Location + Condition(Breeding.Pair),
+  data = meta_df
+)
+
+anova(cap, permutations = 999)
+anova(cap, by = "term", permutations = 999)
+
+```
+results:
+#Treatment
+F = 2.02
+p = 0.026
+Still significant after removing maternal effects, Effect is weaker than Location (expected), Confirms treatment effect is not maternally driven
+#Percent Protein
+F = 3.83
+p = 0.001
+Significant after complete removal of maternal variance, support for dietary gradient effects
+#Location
+F = 14.39
+p = 0.001
+Dominant structuring factor, entirely independent of maternal source
+
+
+#lastly, to address whether littermates were split across treamtments
+```{r}
+maternal_table <- table(meta_df$Breeding.Pair, meta_df$Exp_Diet)
+maternal_df <- as.data.frame.matrix(maternal_table)
+maternal_df$Breeding.Pair <- rownames(maternal_df)  # Optional: add row names as a column
+maternal_df <- maternal_df[, c(ncol(maternal_df), 1:(ncol(maternal_df)-1))]  # Move Breeding.Pair to first column
+
+#write_csv(maternal_df, "/Users/connermertz/vlab Dropbox/Vesbach Lab/Conner Mertz/UNM biology/Chapter 1 E1 vs E2/Methods/16S rRNA gene sequencing/Sequencing_workup/Batch Correction for Maternal effect/Littermates_per_treatment.csv")
+
+```
+
+
+
+
+Sensitiuty analysis:
+Combat - to test for batch effects
+```{r}
+#instal package
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("sva")
+```
+
+
+load packages
+```{r}
+library(phyloseq)
+library(sva)      # ComBat
+library(vegan)
+```
+
+make ps object into correct format
+```{r}
+ps <- E1_E2_forcomparison
+# OTU table
+otu_mat <- as(otu_table(ps), "matrix")
+
+# Ensure taxa are rows (ComBat expects features in rows)
+if (!taxa_are_rows(ps)) {
+  otu_mat <- t(otu_mat)
+}
+
+# Metadata
+meta_df <- data.frame(sample_data(ps), stringsAsFactors = TRUE)
+class(meta_df)
+str(meta_df[, c("Treatment", "Percent_Protein", "Location")])
+#make these factors!
+meta_df$Treatment <- factor(meta_df$Treatment)
+meta_df$Location <- factor(meta_df$Location)
+meta_df$Percent_Protein <- factor(meta_df$Percent_Protein)
+```
+
+#Transform counts (critical)
+ComBat should NOT be run on raw counts.
+```{r}
+otu_rel <- sweep(otu_mat, 2, colSums(otu_mat), "/")
+otu_log <- log1p(otu_rel)
+```
+
+Define Maternal source as a "batch"
+```{r}
+batch <- meta_df$Breeding.Pair
+```
+
+protect diet/gut section effects durring correction
+```{r}
+#run this
+#rownames(meta_df) <- NULL
+mod <- model.matrix(~ Treatment + Percent_Protein + Location, data = meta_df)
+```
+
+#run Combat with mod
+```{r}
+otu_combat <- ComBat(
+  dat = otu_log,
+  batch = meta_df$Breeding.Pair,
+  mod = mod,
+  par.prior = TRUE,
+  prior.plots = FALSE
+)
+```
+confirm output
+```{r}
+class(otu_combat)
+dim(otu_combat)
+
+```
+
+Features with zero variance within maternal source were excluded from batch adjustment, as per ComBat defaults.
+
+rebuild ps object using combat output
+```{r}
+taxa_are_rows(ps) #make sure these are rows
+otu_table(ps) <- otu_table(t(otu_combat), taxa_are_rows = FALSE)
+#Now ps object contains ComBat-corrected data.
+
+```
+
+Calculate distances for batch correction
+```{r}
+dist_combat <- phyloseq::distance(ps, method = "euclidean") #we have to use euclidean because bray doesn't work with log transformations required for combat
+
+```
+
+re-run permanova (post ComBat)
+```{r}
+#treatment
+adonis2(
+  dist_combat ~ Treatment,
+  data = meta_df,
+  permutations = 999
+)
+
+#percent protein
+adonis2(
+  dist_combat ~ Percent_Protein,
+  data = meta_df,
+  permutations = 999
+)
+
+#Gut Section
+adonis2(
+  dist_combat ~ Location,
+  data = meta_df,
+  permutations = 999
+)
+
+#Sex
+adonis2(
+  dist_combat ~ Sex,
+  data = meta_df,
+  permutations = 999
+)
+
+
+```
+
+Lets re-run Combat without mod
+```{r}
+otu_combat_nomod <- ComBat(
+  dat = otu_log,
+  batch = meta_df$Breeding.Pair,
+  mod = NULL,
+  par.prior = TRUE,
+  prior.plots = FALSE
+)
+```
+put back into ps
+```{r}
+otu_table(ps) <- otu_table(t(otu_combat_nomod), taxa_are_rows = FALSE)
+```
+recompute distances
+```{r}
+dist_combat_nomod <- phyloseq::distance(ps, method = "euclidean")
+
+```
+
+re-run permanova (post ComBat, but no mod)
+```{r}
+#treatment
+adonis2(
+  dist_combat_nomod ~ Treatment,
+  data = meta_df,
+  permutations = 999
+)
+
+#percent protein
+adonis2(
+  dist_combat_nomod ~ Percent_Protein,
+  data = meta_df,
+  permutations = 999
+)
+
+#Gut Section
+adonis2(
+  dist_combat_nomod ~ Location,
+  data = meta_df,
+  permutations = 999
+)
+
+#Sex
+adonis2(
+  dist_combat_nomod ~ Sex,
+  data = meta_df,
+  permutations = 999
+)
+
+
+```
+
+
+
+
+
